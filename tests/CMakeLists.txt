@@ -277,6 +277,22 @@ ariadshot_add_gate_case(deleted-fork-touching-workflows
     EXPECT "gate-inspect: fail: fork pull request changes workflows")
 ariadshot_add_gate_case(incomplete-file-list EXPECT "gate-inspect: fail: the changed-file list has 2 entries")
 
+# Repository hygiene: what check-repo.sh sees in the index and in a commit, in throwaway repositories.
+function(ariadshot_add_repo_case case)
+    cmake_parse_arguments(PARSE_ARGV 1 arg "" "EXPECT" "")
+    set(name "scripts.check-repo.${case}")
+    add_test(NAME ${name}
+        COMMAND "${ARIADSHOT_BASH}" "${CMAKE_CURRENT_SOURCE_DIR}/scripts/run-check-repo-case.sh" ${case})
+    set_tests_properties(${name} PROPERTIES PASS_REGULAR_EXPRESSION "${arg_EXPECT}" LABELS unit)
+    ariadshot_test_environment(${name})
+endfunction()
+
+ariadshot_add_repo_case(staged-path-hidden-by-working-copy EXPECT "check-repo: notes.txt:1:.*: private path")
+ariadshot_add_repo_case(reference-and-plans-paths EXPECT "check-repo: notes.txt:1:.* and .*: private path")
+ariadshot_add_repo_case(clean-tree EXPECT "check-repo: no private paths or per-runtime instruction files")
+ariadshot_add_repo_case(untracked-instruction-file
+    EXPECT "check-repo: CLAUDE.md: per-runtime instruction files are not allowed")
+
 # --- The fresh per-test directories -------------------------------------------------------------------------------
 
 get_property(test_names GLOBAL PROPERTY ARIADSHOT_TEST_NAMES)
