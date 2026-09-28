@@ -5,6 +5,9 @@
 # cmake --workflow --preset ci-<x> command, which reproduces the job locally. Configure, build and test fetch nothing;
 # every download happens in the acquisition steps before them. The lint job judges the commit under test with the
 # checkers of a trusted commit, so a pull request cannot weaken the checks that judge it.
+#
+# The ccache keys hash files under the source directories only. A "**/..." pattern would also walk build/, whose test
+# runtime directories (mode 0700, owned by the container's root) the runner cannot read after the build.
 
 name: ci
 
@@ -136,8 +139,8 @@ jobs:
       - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: ~/.ccache
-          key: ccache-linux-gcc-${{ hashFiles('**/CMakeLists.txt', 'CMakePresets.json', 'cmake/**') }}-${{ github.sha }}
-          restore-keys: ccache-linux-gcc-${{ hashFiles('**/CMakeLists.txt', 'CMakePresets.json', 'cmake/**') }}-
+          key: ccache-linux-gcc-${{ hashFiles('CMakeLists.txt', 'src/**/CMakeLists.txt', 'tests/**/CMakeLists.txt', 'CMakePresets.json', 'cmake/**') }}-${{ github.sha }}
+          restore-keys: ccache-linux-gcc-${{ hashFiles('CMakeLists.txt', 'src/**/CMakeLists.txt', 'tests/**/CMakeLists.txt', 'CMakePresets.json', 'cmake/**') }}-
       - name: Build and test
         run: cmake --workflow --preset ci-dev
 
@@ -163,8 +166,8 @@ jobs:
       - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: ~/.ccache
-          key: ccache-linux-clang-${{ hashFiles('**/CMakeLists.txt', 'CMakePresets.json', 'cmake/**') }}-${{ github.sha }}
-          restore-keys: ccache-linux-clang-${{ hashFiles('**/CMakeLists.txt', 'CMakePresets.json', 'cmake/**') }}-
+          key: ccache-linux-clang-${{ hashFiles('CMakeLists.txt', 'src/**/CMakeLists.txt', 'tests/**/CMakeLists.txt', 'CMakePresets.json', 'cmake/**') }}-${{ github.sha }}
+          restore-keys: ccache-linux-clang-${{ hashFiles('CMakeLists.txt', 'src/**/CMakeLists.txt', 'tests/**/CMakeLists.txt', 'CMakePresets.json', 'cmake/**') }}-
       - name: AddressSanitizer and UndefinedBehaviorSanitizer
         run: cmake --workflow --preset ci-asan
       - name: ThreadSanitizer
@@ -204,8 +207,8 @@ jobs:
       - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: ~/.cache/ccache
-          key: ccache-linux-qt-floor-${{ hashFiles('**/CMakeLists.txt', 'CMakePresets.json', 'cmake/**') }}-${{ github.sha }}
-          restore-keys: ccache-linux-qt-floor-${{ hashFiles('**/CMakeLists.txt', 'CMakePresets.json', 'cmake/**') }}-
+          key: ccache-linux-qt-floor-${{ hashFiles('CMakeLists.txt', 'src/**/CMakeLists.txt', 'tests/**/CMakeLists.txt', 'CMakePresets.json', 'cmake/**') }}-${{ github.sha }}
+          restore-keys: ccache-linux-qt-floor-${{ hashFiles('CMakeLists.txt', 'src/**/CMakeLists.txt', 'tests/**/CMakeLists.txt', 'CMakePresets.json', 'cmake/**') }}-
       - name: Build and test
         env:
           ARIADSHOT_EXPECT_QT_VERSION: ${{ env.QT_PINNED_VERSION }}
@@ -239,8 +242,8 @@ jobs:
       - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: ~/.ccache
-          key: ccache-macos-${{ hashFiles('**/CMakeLists.txt', 'CMakePresets.json', 'cmake/**') }}-${{ github.sha }}
-          restore-keys: ccache-macos-${{ hashFiles('**/CMakeLists.txt', 'CMakePresets.json', 'cmake/**') }}-
+          key: ccache-macos-${{ hashFiles('CMakeLists.txt', 'src/**/CMakeLists.txt', 'tests/**/CMakeLists.txt', 'CMakePresets.json', 'cmake/**') }}-${{ github.sha }}
+          restore-keys: ccache-macos-${{ hashFiles('CMakeLists.txt', 'src/**/CMakeLists.txt', 'tests/**/CMakeLists.txt', 'CMakePresets.json', 'cmake/**') }}-
       - name: Build and test
         env:
           ARIADSHOT_EXPECT_QT_VERSION: ${{ env.QT_PINNED_VERSION }}
@@ -275,8 +278,8 @@ jobs:
       - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: ~/.ccache
-          key: ccache-macos-14-${{ hashFiles('**/CMakeLists.txt', 'CMakePresets.json', 'cmake/**') }}-${{ github.sha }}
-          restore-keys: ccache-macos-14-${{ hashFiles('**/CMakeLists.txt', 'CMakePresets.json', 'cmake/**') }}-
+          key: ccache-macos-14-${{ hashFiles('CMakeLists.txt', 'src/**/CMakeLists.txt', 'tests/**/CMakeLists.txt', 'CMakePresets.json', 'cmake/**') }}-${{ github.sha }}
+          restore-keys: ccache-macos-14-${{ hashFiles('CMakeLists.txt', 'src/**/CMakeLists.txt', 'tests/**/CMakeLists.txt', 'CMakePresets.json', 'cmake/**') }}-
       - name: Build and test
         env:
           ARIADSHOT_EXPECT_QT_VERSION: ${{ env.QT_PINNED_VERSION }}
