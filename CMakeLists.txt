@@ -30,14 +30,25 @@ if(BUILD_TESTING)
 endif()
 qt_standard_project_setup(REQUIRES 6.8)
 
-# Qt 6.8.3 and older link WrapOpenGL::WrapOpenGL to the AGL framework, which the macOS 26 SDK no longer ships, so every
-# Qt Gui target fails to link there. Qt later dropped that link upstream ("macOS: Remove linkage to AGL framework");
-# drop it here too when the SDK has no AGL. WrapOpenGL_AGL is the cache entry of Qt's own find_library call.
-if(APPLE AND TARGET WrapOpenGL::WrapOpenGL AND NOT WrapOpenGL_AGL)
-    get_target_property(_ariadshot_opengl_libs WrapOpenGL::WrapOpenGL INTERFACE_LINK_LIBRARIES)
-    if(_ariadshot_opengl_libs)
-        list(REMOVE_ITEM _ariadshot_opengl_libs "-framework AGL")
-        set_target_properties(WrapOpenGL::WrapOpenGL PROPERTIES INTERFACE_LINK_LIBRARIES "${_ariadshot_opengl_libs}")
+# Qt 6.8.3 and older link WrapOpenGL::WrapOpenGL, and so every Qt Gui target, to the AGL framework, which the macOS 26
+# SDK no longer ships; Qt later dropped that link upstream ("macOS: Remove linkage to AGL framework"). Qt finds AGL with
+# find_library(), which can succeed through the host's /System/Library/Frameworks while the SDK the linker uses has no
+# AGL, so whether AGL can be linked is decided by a link test with the real toolchain. When it cannot, the AGL entry
+# is removed from the one imported target that carries it.
+if(APPLE AND TARGET WrapOpenGL::WrapOpenGL)
+    include(CheckCXXSourceCompiles)
+    include(CMakePushCheckState)
+    cmake_push_check_state(RESET)
+    set(CMAKE_REQUIRED_LIBRARIES "-framework AGL")
+    check_cxx_source_compiles("int main() { return 0; }" ARIADSHOT_LINKER_HAS_AGL)
+    cmake_pop_check_state()
+    if(NOT ARIADSHOT_LINKER_HAS_AGL)
+        get_target_property(_ariadshot_opengl_libs WrapOpenGL::WrapOpenGL INTERFACE_LINK_LIBRARIES)
+        if(_ariadshot_opengl_libs)
+            list(FILTER _ariadshot_opengl_libs EXCLUDE REGEX "^-framework AGL$|(^|/)AGL\\.framework$")
+            set_target_properties(WrapOpenGL::WrapOpenGL PROPERTIES
+                INTERFACE_LINK_LIBRARIES "${_ariadshot_opengl_libs}")
+        endif()
     endif()
 endif()
 
