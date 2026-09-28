@@ -1,0 +1,25 @@
+{
+  "action": "synchronize",
+  "number": 7,
+  "pull_request": {
+    "number": 7,
+    "state": "open",
+    "changed_files": 3,
+    "head": {
+      "ref": "feat/tray-menu",
+      "sha": "4f1c2e0d9b8a7c6e5d4f3a2b1c0d9e8f7a6b5c4d",
+      "repo": {
+        "full_name": "bavanchun/AriadShot",
+        "fork": false
+      }
+    },
+    "base": {
+      "ref": "main",
+      "sha": "0a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d",
+      "repo": {
+        "full_name": "bavanchun/AriadShot",
+        "fork": false
+      }
+    }
+  }
+}

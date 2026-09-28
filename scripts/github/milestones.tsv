@@ -1,0 +1,10 @@
+# SPDX-FileCopyrightText: 2026 The AriadShot Authors
+# SPDX-License-Identifier: GPL-3.0-only
+#
+# Milestones created by setup-repository.sh: title TAB description.
+M0 Foundations and gates	Prove or retire the load-bearing assumptions: gates G1 to G8 and the test harness. Produces decisions and measurements, no release.
+M1 MVP	A daily-driver screenshot tool on Hyprland: every line of the M1 atomic set behaves as in MacShot. Release v0.1.0.
+M2 Screenshot parity	Every screenshot line on Hyprland; the M1 set on macOS, KDE and X11. Release v0.2.0.
+M3 Recording parity	Every recording line on Hyprland; every screenshot line on macOS. Release v0.3.0.
+M4 Studio parity	Every studio line on Hyprland; recording lines on macOS. Release v0.4.0.
+M5 Release 1.0	Every applicable line on Hyprland and macOS, breadth on KDE, X11 and GNOME, packaging and release gates. Release v1.0.0.

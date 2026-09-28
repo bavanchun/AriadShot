@@ -1,0 +1,18 @@
+[
+  {
+    "sha": "8c3f0e1a2b4d6f8091a2b3c4d5e6f708192a3b4c",
+    "filename": "src/core/BuildInfo.cpp",
+    "status": "modified",
+    "additions": 4,
+    "deletions": 0,
+    "changes": 4
+  },
+  {
+    "sha": "8c3f0e1a2b4d6f8091a2b3c4d5e6f708192a3b4c",
+    "filename": "src/core/BuildInfo.h",
+    "status": "modified",
+    "additions": 4,
+    "deletions": 0,
+    "changes": 4
+  }
+]
