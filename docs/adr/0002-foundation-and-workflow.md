@@ -86,9 +86,9 @@ scripts, presets and workflows themselves.
 - **Dependencies, two phases.** Acquisition (packages, a pinned Qt for CI, the pinned clang-format, the corpus) may use
   the network; configure, build and test fetch nothing. `FetchContent`, `ExternalProject` and `file(DOWNLOAD)` are
   banned, which `scripts/check-no-network-build.sh` enforces as a policy check. Dependencies come from system packages
-  or are vendored in `third_party/` with their licence and origin. CI pins Qt 6.8.4 on Ubuntu and macOS and checks the
-  version found; the Arch jobs roll with the distribution. The scaffold needs no packages beyond a compiler, CMake,
-  Ninja and Qt.
+  or are vendored in `third_party/` with their licence and origin. CI pins Qt 6.8.3, the last 6.8 release with
+  open-source binaries, on Ubuntu and macOS and checks the version found; the Arch jobs roll with the distribution.
+  The scaffold needs no packages beyond a compiler, CMake, Ninja and Qt.
 - **Warnings, definitions, hardening, sanitizers:** strict warnings on every target; `QT_NO_KEYWORDS`, the
   `QT_NO_CAST_*` family and `QT_DISABLE_DEPRECATED_UP_TO=0x060800`; `_FORTIFY_SOURCE=3`, `_GLIBCXX_ASSERTIONS`, stack
   protection, CET, PIE and full RELRO in release builds on Linux; ASan and UBSan on the whole offscreen suite, TSan on
@@ -133,8 +133,8 @@ scripts, presets and workflows themselves.
   the pull request as data next to its base commit, and run the base commit's checkers against it, so a pull request
   cannot weaken the checks that judge it. One reviewed exception, pinned by SHA in both workflows: the pull request
   whose base is exactly the repository's first commit, which predates the checkers, is judged by its own checkers, and
-  its job summary says so; any other base without checkers fails. Workflow files are protected by who can change them instead:
-  agents cannot push them, and fork changes to them fail the gate. The details are in
+  its job summary says so; any other base without checkers fails. Workflow files are protected by who can change them
+  instead: agents cannot push them, and fork changes to them fail the gate. The details are in
   [`docs/dev/agent-workflow.md`](../dev/agent-workflow.md#trusted-policy-checks).
 - **Rulesets without bypass actors:** on `main`, deletion and force pushes are blocked, history is linear, a pull request
   with resolved conversations and squash-only merging is required, and so are the CI checks and `owner-consent`, each

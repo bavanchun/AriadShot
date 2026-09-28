@@ -25,7 +25,9 @@ concurrency:
 
 env:
   CLANG_FORMAT_VERSION: "22.1.8"
-  QT_PINNED_VERSION: "6.8.4"
+  # The last Qt 6.8 release with open-source binaries; later 6.8 patch releases are published as binaries only to
+  # commercial licensees, so install-qt-action (aqtinstall) cannot resolve them.
+  QT_PINNED_VERSION: "6.8.3"
 
 jobs:
   lint:

@@ -17,7 +17,7 @@ Part of the [AriadShot technical specification](README.md). Contributor-facing b
 | Language | C++20, no compiler extensions | C++20, Objective-C++ for Apple APIs, Swift only where Apple offers no Objective-C API (Translation) |
 | Compilers | GCC (the rolling distribution default) and Clang in CI; GCC 13 on the Qt-floor job | the runner's Apple Clang |
 | Build | CMake ≥ 3.28, Ninja | CMake ≥ 3.28, Ninja (Homebrew) |
-| Qt | ≥ 6.8 (the floor); the Arch jobs roll with the distribution; the Qt-floor job pins Qt 6.8.4 | pinned Qt 6.8.4 in CI; a release pins one Qt minor ([§9](#9-versioning-changelog-and-releases)) |
+| Qt | ≥ 6.8 (the floor); the Arch jobs roll with the distribution; the Qt-floor job pins Qt 6.8.3 | pinned Qt 6.8.3 in CI; a release pins one Qt minor ([§9](#9-versioning-changelog-and-releases)) |
 | Deployment target | — | macOS 14.0 |
 
 CI is the arbiter of which C++20 library features are usable: a feature that fails on any required job is not used.
@@ -82,7 +82,10 @@ why the "find the system package, else download" pattern is rejected: it still d
 - **System packages.** The Linux reference is Arch Linux: system Qt, FFmpeg, PipeWire, `layer-shell-qt` and ONNX
   Runtime (`onnxruntime-cpu`). The Arch CI jobs roll with the distribution; a weekly scheduled run on `main` catches
   breakage early.
-- **Pinned Qt in CI.** Qt 6.8.4 through `install-qt-action` (pinned by commit SHA) on Ubuntu 24.04 and on macOS.
+- **Pinned Qt in CI.** Qt 6.8.3 through `install-qt-action` (pinned by commit SHA) on Ubuntu 24.04 and on macOS: the
+  last Qt 6.8 release with open-source binaries, since later 6.8 patch releases ship binaries to commercial licensees
+  only. On the macOS 26 SDK, which has no AGL framework, the top-level `CMakeLists.txt` drops the AGL link that Qt
+  6.8.3's OpenGL wrapper adds.
   Homebrew's `qt` formula moves with every release and is not used for Qt in CI; Homebrew still provides `ninja`.
   Local macOS development may use Homebrew `qt`. Each job prints the resolved Qt, compiler and CMake versions into the
   job summary, and configure fails when the cache variable `ARIADSHOT_EXPECT_QT_VERSION` (set by the job) does not match
@@ -192,8 +195,8 @@ The job names below are the required status checks; `owner-consent` is a check r
 | `commit-policy` | Ubuntu 24.04 | pull request title and body, every commit in the range, pull request size, DCO |
 | `linux-gcc` | Arch container | `cmake --workflow --preset ci-dev` (GCC, Qt from Arch); tier 2 joins once proven ([12 §2](12-testing-strategy.md)) |
 | `linux-clang` | Arch container | `ci-asan` and `ci-tsan` workflows, clang-tidy and clazy on the tracked file list |
-| `linux-qt-floor` | Ubuntu 24.04 | GCC 13 and pinned Qt 6.8.4, `ci-dev` workflow, expected-Qt check |
-| `macos` | `macos-26` (arm64) | pinned Qt 6.8.4, `ci-dev` workflow, deployment target 14.0, expected-Qt check |
+| `linux-qt-floor` | Ubuntu 24.04 | GCC 13 and pinned Qt 6.8.3, `ci-dev` workflow, expected-Qt check |
+| `macos` | `macos-26` (arm64) | pinned Qt 6.8.3, `ci-dev` workflow, deployment target 14.0, expected-Qt check |
 | `macos-14` | `macos-14` (arm64) | as `macos`; the only per-pull-request check of the macOS 14 runtime. Required until GitHub retires the image on 2026-11-02; then the scheduled VM run replaces it and the parity report marks per-pull-request macOS 14 coverage as ended |
 | `owner-consent` | Ubuntu 24.04 | check run created on the pull request's head SHA by `owner-gate.yml` (§6.1) after the owner approves the `owner-review` environment for that commit |
 

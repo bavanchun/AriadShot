@@ -70,8 +70,10 @@ export CMAKE_PREFIX_PATH="$(brew --prefix qt)"
 cmake --workflow --preset dev
 ```
 
-The deployment target is macOS 14.0. CI builds with a pinned Qt 6.8.4 instead of Homebrew's, which moves with every Qt
-release. The maintainer verifies pull requests on a Mac with `scripts/macos/verify.sh <commit>`.
+The deployment target is macOS 14.0. CI builds with a pinned Qt 6.8.3 instead of Homebrew's, which moves with every
+Qt release; 6.8.3 is the last Qt 6.8 release with open-source binaries. Qt 6.8.3 links its OpenGL wrapper to the AGL
+framework, which the macOS 26 SDK no longer has; the top-level `CMakeLists.txt` drops that link when the SDK lacks AGL,
+as later Qt releases do. The maintainer verifies pull requests on a Mac with `scripts/macos/verify.sh <commit>`.
 
 ## Checks before a pull request
 
@@ -93,9 +95,9 @@ fast subset on every commit and push.
 | `commit-policy` | Ubuntu | pull request title and body, commit messages, pull request size, DCO, with the base commit's checkers |
 | `linux-gcc` | Arch Linux container | `cmake --workflow --preset ci-dev` |
 | `linux-clang` | Arch Linux container | `ci-asan` and `ci-tsan` workflows, then clang-tidy and clazy on tracked sources |
-| `linux-qt-floor` | Ubuntu 24.04, GCC 13, Qt 6.8.4 | `cmake --workflow --preset ci-dev` |
-| `macos` | macOS 26, Qt 6.8.4 | `cmake --workflow --preset ci-dev` |
-| `macos-14` | macOS 14, Qt 6.8.4 | `cmake --workflow --preset ci-dev` (until GitHub retires the image) |
+| `linux-qt-floor` | Ubuntu 24.04, GCC 13, Qt 6.8.3 | `cmake --workflow --preset ci-dev` |
+| `macos` | macOS 26, Qt 6.8.3 | `cmake --workflow --preset ci-dev` |
+| `macos-14` | macOS 14, Qt 6.8.3 | `cmake --workflow --preset ci-dev` (until GitHub retires the image) |
 
 Each build job writes the Qt, compiler and CMake versions it used to the job summary. `lint` and `commit-policy` run
 the checkers of the pull request's base commit, so a change to a checker applies from the next pull request on
