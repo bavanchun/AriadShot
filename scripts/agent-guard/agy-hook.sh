@@ -53,7 +53,7 @@ cwd=$(jq -r '.toolCall.args.Cwd // .workspacePaths[0] // empty' <<<"$payload")
 case "$name" in
     run_command)
         command_text=$(jq -r '.toolCall.args.CommandLine // empty' <<<"$payload")
-        result=$("$here/check-command.sh" --cwd "$cwd" --command "$command_text") || deny "$result"
+        result=$("$BASH" "$here/check-command.sh" --cwd "$cwd" --command "$command_text") || deny "$result"
         allow
         ;;
     view_* | list_* | read_* | grep_search | find_by_name | codebase_search | search_web)
@@ -62,7 +62,7 @@ case "$name" in
     *)
         while IFS= read -r path; do
             [ -n "$path" ] || continue
-            result=$("$here/check-command.sh" --cwd "$cwd" --path "$path") || deny "$result"
+            result=$("$BASH" "$here/check-command.sh" --cwd "$cwd" --path "$path") || deny "$result"
         done < <(jq -r '(.toolCall.args // {}) | to_entries[]
             | select(.key | test("(File|Path|Directory)s?$"))
             | .value | if type == "array" then .[] else . end | strings' <<<"$payload")

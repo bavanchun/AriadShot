@@ -39,12 +39,12 @@ cwd=$(jq -r '.cwd // empty' <<<"$payload")
 case "$tool" in
     Bash)
         command_text=$(jq -r '.tool_input.command // empty' <<<"$payload")
-        result=$("$here/check-command.sh" --cwd "$cwd" --command "$command_text")
+        result=$("$BASH" "$here/check-command.sh" --cwd "$cwd" --command "$command_text")
         ;;
     Edit | Write | MultiEdit | NotebookEdit)
         path=$(jq -r '.tool_input.file_path // .tool_input.notebook_path // empty' <<<"$payload")
         [ -n "$path" ] || exit 0
-        result=$("$here/check-command.sh" --cwd "$cwd" --path "$path")
+        result=$("$BASH" "$here/check-command.sh" --cwd "$cwd" --path "$path")
         ;;
     *)
         exit 0
