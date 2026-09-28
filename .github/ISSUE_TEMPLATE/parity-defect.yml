@@ -1,0 +1,45 @@
+# SPDX-FileCopyrightText: 2026 The AriadShot Authors
+# SPDX-License-Identifier: GPL-3.0-only
+name: Parity defect
+description: AriadShot behaves differently from MacShot where no deviation is registered.
+labels: ["type:fix"]
+body:
+  - type: textarea
+    id: macshot
+    attributes:
+      label: MacShot behaviour
+      description: What MacShot does, with the source line at b4d4f3a (macshot/<path>:<line>@b4d4f3a) or a corpus image.
+    validations:
+      required: true
+  - type: textarea
+    id: ariadshot
+    attributes:
+      label: AriadShot behaviour
+      description: What AriadShot does instead, with steps to reproduce.
+    validations:
+      required: true
+  - type: input
+    id: ledger-line
+    attributes:
+      label: Ledger line
+      description: The parity-ledger line that covers the behaviour, if you know it.
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: The output of ariadshot-daemon --version.
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - Hyprland
+        - Other wlroots compositor
+        - KDE Plasma
+        - X11
+        - GNOME
+        - macOS
+    validations:
+      required: true
