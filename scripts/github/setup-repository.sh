@@ -17,8 +17,13 @@
 #   - labels.tsv and milestones.tsv from this directory.
 # Then it prints the active configuration back.
 #
-# Usage: setup-repository.sh [--repo OWNER/NAME] [--without-macos-14] [--dry-run]
+# Usage: setup-repository.sh [--repo OWNER/NAME] [--without-macos-14] [--bootstrap] [--dry-run]
 #   --without-macos-14  drop the macos-14 required check once GitHub has retired that runner image (2026-11-02)
+#   --bootstrap         the one-time exception for the scaffold pull request (docs/dev/agent-workflow.md, "Bootstrap of
+#                       the owner gate"): apply the main ruleset without the owner-consent check, everything else
+#                       identical. The owner gate runs from the base branch's workflow, and the repository's first
+#                       commit has none, so that pull request can never get owner-consent. Refused once the default
+#                       branch has the owner gate workflow. Re-run without the flag right after merging it.
 #   --dry-run           print every request instead of sending it; reads nothing from GitHub
 
 set -euo pipefail
@@ -26,12 +31,14 @@ set -euo pipefail
 repo=bavanchun/AriadShot
 dry_run=0
 with_macos_14=1
+bootstrap=0
 while [ $# -gt 0 ]; do
     case "$1" in
         --repo) repo=$2; shift 2 ;;
         --without-macos-14) with_macos_14=0; shift ;;
+        --bootstrap) bootstrap=1; shift ;;
         --dry-run) dry_run=1; shift ;;
-        *) echo "usage: $0 [--repo OWNER/NAME] [--without-macos-14] [--dry-run]" >&2; exit 2 ;;
+        *) echo "usage: $0 [--repo OWNER/NAME] [--without-macos-14] [--bootstrap] [--dry-run]" >&2; exit 2 ;;
     esac
 done
 owner=${repo%%/*}
@@ -41,7 +48,7 @@ readonly GATE_WORKFLOW=.github/workflows/owner-gate.yml
 
 required_checks=(lint commit-policy linux-gcc linux-clang linux-qt-floor macos)
 [ "$with_macos_14" = 1 ] && required_checks+=(macos-14)
-required_checks+=(owner-consent)
+[ "$bootstrap" = 0 ] && required_checks+=(owner-consent)
 
 # api METHOD PATH [JSON]: sends a request (or prints it in a dry run).
 api() {
@@ -63,6 +70,22 @@ step() {
     echo "== $1"
 }
 
+bootstrap_notice() {
+    cat >&2 <<'NOTICE'
+
+################################################################################################################
+#  BOOTSTRAP: the main ruleset does NOT require owner-consent.                                                 #
+#                                                                                                              #
+#  Until this script runs again without --bootstrap, a pull request with green CI can merge without the owner  #
+#  gate, and the agent token could merge it. Use this only to squash-merge the scaffold pull request after its #
+#  attended checks, keep agent panes idle meanwhile, and then immediately run:                                 #
+#      scripts/github/setup-repository.sh                                                                      #
+#      scripts/github/verify-identity.sh owner                                                                 #
+#  verify-identity.sh owner fails until owner-consent is required again.                                       #
+################################################################################################################
+NOTICE
+}
+
 if [ "$dry_run" = 0 ]; then
     login=$(gh api user --jq .login)
     if [ "$login" != "$owner" ]; then
@@ -74,6 +97,21 @@ if [ "$dry_run" = 0 ]; then
 else
     owner_id=0
     default_branch=main
+fi
+
+if [ "$bootstrap" = 1 ]; then
+    # The exception exists only while the default branch has no owner gate workflow; fail closed on any other answer.
+    if [ "$dry_run" = 0 ]; then
+        if gate_lookup=$(gh api "repos/$repo/contents/$GATE_WORKFLOW?ref=$default_branch" --jq .path 2>&1); then
+            echo "setup-repository: $default_branch already has $GATE_WORKFLOW; the bootstrap exception is over," \
+                "run this without --bootstrap" >&2
+            exit 1
+        elif [[ $gate_lookup != *"HTTP 404"* ]]; then
+            echo "setup-repository: cannot tell whether $default_branch has $GATE_WORKFLOW: $gate_lookup" >&2
+            exit 1
+        fi
+    fi
+    bootstrap_notice
 fi
 
 step "Repository settings"
@@ -172,6 +210,7 @@ apply_ruleset() {
 
 step "Ruleset main (required checks: ${required_checks[*]})"
 apply_ruleset main "$main_ruleset"
+[ "$bootstrap" = 1 ] && echo "BOOTSTRAP: owner-consent is not required; re-run without --bootstrap after the merge"
 step "Ruleset release-tags"
 apply_ruleset release-tags "$tags_ruleset"
 
@@ -201,7 +240,10 @@ while IFS=$'\t' read -r title description; do
 done <"$here/milestones.tsv"
 echo "milestones applied"
 
-[ "$dry_run" = 1 ] && exit 0
+if [ "$dry_run" = 1 ]; then
+    [ "$bootstrap" = 1 ] && bootstrap_notice
+    exit 0
+fi
 
 step "Active configuration"
 gh api "repos/$repo" --jq '{allow_squash_merge, allow_merge_commit, allow_rebase_merge, squash_merge_commit_title,
@@ -220,3 +262,6 @@ for id in $(gh api "repos/$repo/rulesets" --jq '.[].id'); do
         strict: ([.rules[] | select(.type == "required_status_checks") | .parameters.strict_required_status_checks_policy][0]),
         checks: ([.rules[] | select(.type == "required_status_checks") | .parameters.required_status_checks[] | "\(.context)@\(.integration_id)"])}'
 done
+if [ "$bootstrap" = 1 ]; then
+    bootstrap_notice
+fi

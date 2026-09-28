@@ -129,7 +129,12 @@ scripts, presets and workflows themselves.
   gate uses `pull_request_target` the way GitHub documents as safe: it checks out and runs none of the pull request's
   code, and its token only reads pull requests and writes check runs. Because GitHub blocks that event in public
   repositories by default from 2026-11-02, a repository Actions event policy permits `pull_request_target` for the
-  gate's workflow file only; the maintainer's setup script creates it and the verification script checks it.
+  gate's workflow file only; the maintainer's setup script creates it and the verification script checks it. The gate
+  runs from the base branch's workflow, and the repository's first commit has none, so the scaffold pull request is
+  merged under a one-time bootstrap: the maintainer applies the `main` ruleset without `owner-consent`
+  (`setup-repository.sh --bootstrap`, refused once `main` has the gate workflow), merges it personally, and immediately
+  restores the full ruleset; `verify-identity.sh owner` fails while `owner-consent` is not required. The sequence is in
+  [`docs/dev/agent-workflow.md`](../dev/agent-workflow.md#trusted-policy-checks).
 - **Trusted policy checks.** The `lint` and `commit-policy` checks run on `pull_request` without secrets, check out
   the pull request as data next to its base commit, and run the base commit's checkers against it, so a pull request
   cannot weaken the checks that judge it. One reviewed exception, pinned by SHA in both workflows: the pull request

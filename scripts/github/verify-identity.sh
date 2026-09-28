@@ -172,7 +172,8 @@ verify_owner() {
             if [[ " $checks " == *" owner-consent "* ]]; then
                 pass "main requires: $checks"
             else
-                fail "main does not require owner-consent (requires: $checks)"
+                # Also the state during the scaffold bootstrap (setup-repository.sh --bootstrap), which must not last.
+                fail "main does not require owner-consent (requires: $checks); run setup-repository.sh without --bootstrap"
             fi
         fi
     done < <(gh api "repos/$repo/rulesets" --jq '.[] | "\(.id)\t\(.name)"')

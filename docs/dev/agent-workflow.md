@@ -161,9 +161,22 @@ for that.
 - **Bootstrap: a one-time, reviewed exception.** The repository's first commit, `bbf2d44`, predates the checkers, so
   the pull request that adds them has no trusted checkers to be judged by. Both workflows pin that commit's full SHA:
   only a pull request whose base is exactly `bbf2d44` runs its own checkers, and its job summary says so. The
-  maintainer reviews those checkers line by line before approving the gate of any pull request that runs under the
-  exception; only the scaffold pull request is expected to. Any other base without checkers, including any other root
-  commit, fails the job.
+  maintainer reviews those checkers line by line before merging any pull request that runs under the exception; only
+  the scaffold pull request is expected to. Any other base without checkers, including any other root commit, fails
+  the job.
+- **Bootstrap of the owner gate: a one-time exception.** `pull_request_target` runs the owner gate from the base
+  branch's workflow, and `bbf2d44` has none, so the scaffold pull request can never get `owner-consent`, and the `main`
+  ruleset has no bypass actors. The maintainer merges that pull request in one sitting:
+  1. Run `scripts/github/setup-repository.sh --bootstrap` with the maintainer's own login. It applies the `main`
+     ruleset with every rule and required check except `owner-consent` and prints a notice. It refuses to run once
+     `main` has `.github/workflows/owner-gate.yml`, so it cannot be used after the merge.
+  2. Complete the scaffold's attended checks, then squash-merge the scaffold pull request personally.
+  3. Immediately run `scripts/github/setup-repository.sh` without the flag, which requires `owner-consent` again, and
+     `scripts/github/verify-identity.sh owner`, which must pass. It fails for as long as `main` does not require
+     `owner-consent`.
+
+  Between steps 1 and 3 any pull request with green CI could merge without the gate, including through the agent
+  token, so agent panes stay idle and no other pull request is merged.
 - The build and test jobs run the pull request's own CMake files and tests, because those are what they test. They hold
   no secrets and no write token; a weakened test shows in the diff, which the maintainer reads before approving the
   gate.
