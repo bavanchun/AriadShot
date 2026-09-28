@@ -1,0 +1,45 @@
+# SPDX-FileCopyrightText: 2026 The AriadShot Authors
+# SPDX-License-Identifier: GPL-3.0-only
+#
+# Cases for scripts/check-commit-message.sh, one per line: <mode> TAB <expectation> TAB <message>.
+# mode: commit (a commit message), pr-title or pr-body. expectation: accept, or the name of the rule that must reject
+# the message; CTest then matches the checker's own "rejected [<rule>]" line. In <message>, \n is a line break.
+commit	accept	feat(core): add build information
+commit	accept	fix(render): keep the device pixel ratio of canonical images\n\nThe factory now sets the ratio before filling.
+commit	accept	build: add CMake presets for sanitizer builds
+commit	accept	perf(render): cache the QPainter path of each annotation
+commit	accept	refactor(wayland): move PipeWire setup into WaylandSession
+commit	accept	feat(app)!: drop the legacy tray fallback
+commit	accept	ci: bump actions/checkout from 7.0.0 to 7.0.1
+commit	accept	docs: describe the API of the settings store
+commit	accept	feat(ui): draw cursor shapes for the selection handles
+commit	accept	feat(core): xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+commit	accept	feat(app): add the tray menu\n\nCo-Authored-By: A Contributor <contributor@example.org>
+commit	header-format	Add build information
+commit	header-format	feature(core): add build information
+commit	header-format	feat(core):add build information
+commit	scope	feat(settings): add the store
+commit	subject-case	feat(core): Add build information
+commit	subject-period	feat(core): add build information.
+commit	header-length	feat(core): xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+commit	body-separator	feat(core): add build information\nThe version comes from git.
+commit	empty	\n\n
+commit	ai-reference	feat(app): add the tray menu\n\nWritten with Claude.
+commit	ai-reference	fix(render): apply the fix suggested by ChatGPT
+commit	ai-reference	chore: tidy code as the Codex review asked
+commit	attribution	feat(app): add the tray menu\n\nGenerated with a coding assistant
+commit	attribution	feat(app): add the tray menu\n\n🤖 made by a bot
+commit	plan-id	feat(app): add the status menu for SH-08
+commit	plan-id	feat(ui): implement the annotation row AN-06a
+commit	plan-id	fix(wayland): pass the G1 keyboard step
+commit	plan-id	docs: record the M1 exit criteria
+commit	plan-id	fix(render): honour the radius as DEV-10 describes
+commit	plan-id	chore: finish phase 3 of the plan
+pr-title	accept	feat(core): add build information
+pr-title	accept	feat(core): yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy
+pr-title	header-length	feat(core): yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy
+pr-title	subject-case	feat(core): Add build information
+pr-title	plan-id	feat(app): add the status menu (SH-08)
+pr-body	accept	Adds the tray menu.\n\nLedger lines: SH-08.capture-area\nMacShot: macshot/AppDelegate.swift:914@b4d4f3a
+pr-body	attribution	Adds the tray menu.\n\n🤖 Generated with a coding assistant
+pr-body	attribution	Adds the tray menu.\n\nCo-Authored-By: Claude <noreply@anthropic.com>
