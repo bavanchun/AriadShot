@@ -16,8 +16,9 @@
   `VE` studio, `ED` editor and windows, `SV` services, `ST` settings); *row*, *ledger line*, *domain* and other terms
   are defined in §14. Every FR is traceable to rows; the full coverage index is Appendix A.
 - MacShot citations use `path:line@b4d4f3a`, relative to the root of the upstream repository.
-- Numbers marked **(H)** are hypotheses until the gate named with them (G3, G5 or G8) measures them; ADR 0001 then
-  keeps, revises or rejects each one. Requirements and targets marked **(PRD)** are introduced by this document.
+- Numbers marked **(H)** are hypotheses until the gate named with them (G3, G5 or G8) measures them; a new ADR that
+  amends ADR 0001 then keeps, revises or rejects each one. Requirements and targets marked **(PRD)** are introduced by
+  this document.
 
 ## 1. Vision
 
@@ -179,7 +180,7 @@ Sway and other wlroots compositors are claimed only for what headless Sway CI me
 
 ### 7.2 M0 — Foundations and go/no-go gates
 
-| Gate | Proves | Pass criteria (summary; full text in ADR 0001) | If it fails |
+| Gate | Proves | Pass criteria (summary; full text in `docs/spec/14-gates-and-milestones.md` §2) | If it fails |
 | :--- | :--- | :--- | :--- |
 | G1 Overlay host | Qt surfaces work as overlays on Hyprland layer-shell | seven steps: one overlay-layer surface per output over the bar (incl. a rotated output and scale 1.25); exactly one keyboard-owning surface with hand-over; in-surface popovers; IME (Vietnamese Telex and one CJK engine, candidate window ≤ 50 px from the caret); re-show ≤ 150 ms p95; drag ≤ 16.7 ms p95; cursor shapes | predefined outcomes: Widgets host H1, Qt Quick host H2 (1–2 weeks), hand-written client H3 (4–6 weeks), IME fallback (DEV-21), or fullscreen-toplevel fallback |
 | G2 Capture | the specified capture sequence, not just advertised protocols | per-output source; no AriadShot pixels in 100 captures with a thumbnail and pin visible; rotated output upright; renegotiation and fallback to screencopy; cursor as `captureCursor`; W1 measured | screencopy primary; else a portal snapshot path with revised budget |
@@ -188,7 +189,7 @@ Sway and other wlroots compositors are claimed only for what headless Sway CI me
 | G5 Studio contract | preview equals export for video | decoded frame through QRhi (Vulkan) on screen and offscreen, VA-API encode; ΔE00 ≤ 1 preview vs pre-encode; OpenGL fallback runs | fix; a QRhi failure on both APIs with a passing wgpu spike reopens the stack |
 | G6 Recording path | the Linux recording source | W4 on image-copy DMA-BUF and on PipeWire; 200 kill trials | choose the better path; revise the budget with numbers, never silently |
 | G7 macOS environment | every macOS claim | a physical Mac on macOS 26 plus a macOS 14 VM as self-hosted runner; MacShot built at `b4d4f3a` for the corpus; overlay skeleton (ScreenCaptureKit, non-activating panel, IME) on both versions. **Amended by the no-paid-accounts constraint: no notarization dry run; instead an inside-out ad-hoc-signed bundle passes `codesign --verify --deep --strict`, the documented first-open steps work after a quarantined download on macOS 26 and 14, and a permission experiment (ad-hoc and self-signed) records whether Screen Recording grants and Keychain access survive a bundle replacement** | macOS stays "builds only"; corpus falls back to published assets with reduced confidence; the minimum narrows to the oldest version that passes |
-| G8 Baselines | the budgets | a baseline for every budget on P1–P3 | each budget kept, revised or rejected in ADR 0001 with numbers |
+| G8 Baselines | the budgets | a baseline for every budget on P1–P3 | each budget kept, revised or rejected with numbers in a new ADR that amends ADR 0001 |
 
 ### 7.3 M1 — MVP (Hyprland, English only)
 
@@ -706,7 +707,8 @@ narrows to the oldest tested version otherwise.
 
 1. Every ledger line of the milestone is `verified` on the platforms of §7.1, or a registered deviation (SM-1, SM-11).
 2. The four milestone artifacts are generated from `parity/` and published in the release notes.
-3. The milestone's performance budgets are met, or revised in ADR 0001 with measured numbers — never silently.
+3. The milestone's performance budgets are met, or revised with measured numbers in a new ADR that amends ADR 0001 —
+   never silently.
 4. The robustness gates that apply to the milestone's features pass (§9.4).
 5. CI is green on every required Linux and macOS job (incl. sanitizers, the Qt 6.8 floor and macOS 14, hosted or on
    the VM runner), and the maintainer's Mac checklist for the milestone's macOS scope has passed.
