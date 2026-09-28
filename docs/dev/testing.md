@@ -73,7 +73,9 @@ Every test runs with `QT_QPA_PLATFORM=offscreen`; with `QT_QPA_PLATFORMTHEME`, `
 run. Tests that use `QStandardPaths` also call `QStandardPaths::setTestModeEnabled(true)`.
 
 The reason: a desktop platform theme such as `gtk3` loads fontconfig, Pango and GLib into the test process, which makes
-goldens host-dependent and produces leak reports under AddressSanitizer. The sanitizer presets pass with such a theme
+goldens host-dependent and produces leak reports under AddressSanitizer. The session bus is hidden too, because Qt
+reaches the desktop's tray over D-Bus even on the offscreen platform; libdbus falls back to `$XDG_RUNTIME_DIR/bus`, so
+both the unset `DBUS_SESSION_BUS_ADDRESS` and the private `XDG_RUNTIME_DIR` are needed. The sanitizer presets pass with such a theme
 set in the calling shell. Packaging `check()` steps unset the same variables. Bundled fonts (`QT_QPA_FONTDIR`) join the
 environment when they are added.
 

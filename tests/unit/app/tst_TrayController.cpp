@@ -15,11 +15,12 @@
 using namespace Qt::StringLiterals;
 using ariadshot::app::TrayController;
 
-// Runs offscreen: whether the icon appears on a real tray is checked by hand on the desktop.
+// Runs offscreen without a session bus: whether the icon appears on a real tray is checked by hand on the desktop.
 class TrayControllerTest : public QObject {
     Q_OBJECT
 
   private Q_SLOTS:
+    void initTestCase();
     void menuHoldsOnlyQuit();
     void quitActionEndsTheEventLoop();
 
@@ -27,10 +28,15 @@ class TrayControllerTest : public QObject {
     static void expectNoTrayWarning();
 };
 
+void TrayControllerTest::initTestCase() {
+    // The tray is reached over the session bus even on the offscreen platform. The test environment has no session
+    // bus, so these tests can never put an icon on the user's tray; fail loudly if that isolation is lost.
+    QVERIFY2(!QSystemTrayIcon::isSystemTrayAvailable(),
+             "a system tray is reachable; run this test through CTest, which hides the session bus");
+}
+
 void TrayControllerTest::expectNoTrayWarning() {
-    if (!QSystemTrayIcon::isSystemTrayAvailable()) {
-        QTest::ignoreMessage(QtWarningMsg, QRegularExpression(u"No system tray is available"_s));
-    }
+    QTest::ignoreMessage(QtWarningMsg, QRegularExpression(u"No system tray is available"_s));
 }
 
 void TrayControllerTest::menuHoldsOnlyQuit() {
