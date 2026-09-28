@@ -1,0 +1,15 @@
+# Build trees
+/build/
+/out/
+CMakeUserPresets.json
+
+# Editor and tool state
+.cache/
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# Local environment and secrets
+.env
+*.env
