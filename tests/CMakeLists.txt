@@ -292,6 +292,8 @@ ariadshot_add_repo_case(reference-and-plans-paths EXPECT "check-repo: notes.txt:
 ariadshot_add_repo_case(clean-tree EXPECT "check-repo: no private paths or per-runtime instruction files")
 ariadshot_add_repo_case(untracked-instruction-file
     EXPECT "check-repo: CLAUDE.md: per-runtime instruction files are not allowed")
+ariadshot_add_repo_case(private-directory-staged EXPECT "check-repo: [A-Za-z]+/reference-note.txt: private file path")
+ariadshot_add_repo_case(private-directory-committed EXPECT "check-repo: docs/[a-z]+/plan-note.txt: private file path")
 
 # --- The fresh per-test directories -------------------------------------------------------------------------------
 

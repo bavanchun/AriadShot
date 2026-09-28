@@ -114,7 +114,7 @@ checker's own message, so an unrelated error cannot make it pass.
   through the real adapters, in throwaway repositories.
 - `scripts.gate-inspect.*` feed recorded pull request payloads to the owner gate's decision script.
 - `scripts.check-repo.*` run `scripts/check-repo.sh` in throwaway repositories: a private path that is staged but
-  hidden by a different working copy, private paths in a commit, a clean tree, and an untracked `CLAUDE.md`
-  (`tests/scripts/run-check-repo-case.sh`).
+  hidden by a different working copy, private paths in a commit, files under private directories (staged, and
+  committed in a nested directory), a clean tree, and an untracked `CLAUDE.md` (`tests/scripts/run-check-repo-case.sh`).
 
 Add a case to the case file instead of writing a new test when a rule changes.

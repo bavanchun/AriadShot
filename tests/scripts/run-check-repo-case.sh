@@ -10,6 +10,9 @@
 #   reference-and-plans-paths           a commit holds a path into the reference checkout and one into the plans
 #   clean-tree                          nothing private anywhere
 #   untracked-instruction-file          an untracked CLAUDE.md in the working tree
+#   private-directory-staged            a staged file with safe content inside a directory named like the reference
+#                                       checkout
+#   private-directory-committed         a committed file with safe content inside a nested plans directory
 
 set -uo pipefail
 
@@ -26,6 +29,8 @@ git_quiet() {
 home_path=$(printf '/%s/%s/%s/private' home secretowner Ref)
 reference_path=$(printf '%s/%s' Ref other)
 plans_path=$(printf '%s/%s' plans private-note)
+reference_dir=Ref
+plans_dir=docs/plans
 
 cd "$scratch" || exit 2
 git_quiet init -b main
@@ -52,6 +57,19 @@ case "$case_name" in
     untracked-instruction-file)
         echo "Instructions" >CLAUDE.md
         "$BASH" "$checker" --staged
+        ;;
+    private-directory-staged)
+        mkdir "$reference_dir"
+        echo "Safe text" >"$reference_dir/reference-note.txt"
+        git_quiet add "$reference_dir/reference-note.txt"
+        "$BASH" "$checker" --staged
+        ;;
+    private-directory-committed)
+        mkdir -p "$plans_dir"
+        echo "Safe text" >"$plans_dir/plan-note.txt"
+        git_quiet add "$plans_dir/plan-note.txt"
+        git_quiet commit -m "add a note"
+        "$BASH" "$checker" --tree HEAD
         ;;
     *)
         echo "run-check-repo-case: unknown case '$case_name'" >&2

@@ -6,8 +6,8 @@
 #   1. No per-runtime instruction files: CLAUDE.md, CLAUDE.local.md, .claude/CLAUDE.md, GEMINI.md or Cursor rules,
 #      tracked or not. One of them anywhere in the working tree switches Claude Code to CLAUDE.md-only mode, which stops
 #      the AGENTS.md files from loading. AGENTS.md is the single instruction file.
-#   2. No private paths in the published content: no home directory, no path into the maintainer's private workspace
-#      (its MacShot reference checkout, its plans and reports, its environment file).
+#   2. No private paths in the published content or in the published file paths: no home directory, no path into the
+#      maintainer's private workspace (its MacShot reference checkout, its plans and reports, its environment file).
 #   3. Every nested AGENTS.md is listed in the root AGENTS.md under "Before editing, read the nested file for that
 #      directory", and every listed file exists: Codex and agy load nested files only through that list.
 #   4. The owner gate workflow embeds the current scripts/github/gate-inspect.sh.
@@ -49,9 +49,9 @@ fail() {
 # Published file names and contents, from the index or from the tree of $rev.
 published_files() {
     if [ "$mode" = tree ]; then
-        git ls-tree -r --name-only "$rev"
+        git -c core.quotePath=false ls-tree -r --name-only "$rev"
     else
-        git ls-files --cached
+        git -c core.quotePath=false ls-files --cached
     fi
 }
 
@@ -91,9 +91,13 @@ done < <(published_grep -nIE "$PRIVATE_PATHS")
 while IFS= read -r path; do
     fail "$path: binary file containing a private path"
 done < <(comm -23 <(published_grep -lE "$PRIVATE_PATHS" | sort) <(published_grep -lIE "$PRIVATE_PATHS" | sort))
+# File paths: a file under a private directory publishes that directory by its name alone.
+files=$(published_files)
+while IFS= read -r path; do
+    fail "$path: private file path; keep the private workspace's directories and files out of the repository"
+done < <(grep -E "$PRIVATE_PATHS" <<<"$files")
 
 # 3. Nested AGENTS.md files and the root list.
-files=$(published_files)
 if ! grep -qx 'AGENTS.md' <<<"$files"; then
     fail "AGENTS.md is missing"
 else
