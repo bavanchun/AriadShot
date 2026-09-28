@@ -10,6 +10,10 @@
 #                history and the commit messages are those between the merge base with origin/main (or main) and HEAD.
 #   --lint-only  only the lint checks (the CI lint job runs this).
 # Needs clang-format 22, shellcheck, actionlint, reuse, gitleaks and jq (scripts/setup-dev.sh lists what is missing).
+#
+# The checkers and the gitleaks configuration are taken from the directory of this script, and the repository checked
+# is the current directory. CI uses this to run the base branch's checkers against a pull request's checkout, so a pull
+# request cannot weaken the checks that judge it (docs/dev/agent-workflow.md, "Trusted policy checks").
 
 set -uo pipefail
 
@@ -23,6 +27,7 @@ while [ $# -gt 0 ]; do
     esac
 done
 
+checkers=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 cd "$(git rev-parse --show-toplevel)" || exit 2
 failed=()
 
@@ -64,9 +69,9 @@ run_reuse() {
 run_gitleaks() {
     require gitleaks || return 1
     if [ -n "$range" ]; then
-        gitleaks git --no-banner --redact --log-opts="$range" .
+        gitleaks git --no-banner --redact --config "$checkers/../.gitleaks.toml" --log-opts="$range" .
     else
-        gitleaks git --no-banner --redact .
+        gitleaks git --no-banner --redact --config "$checkers/../.gitleaks.toml" .
     fi
 }
 
@@ -81,13 +86,14 @@ run_commit_messages() {
         fi
         commits=$base..HEAD
     fi
-    scripts/check-commit-message.sh --range "$commits"
+    "$BASH" "$checkers/check-commit-message.sh" --range "$commits"
 }
 
-run format scripts/check-format.sh
-run architecture scripts/check-architecture.sh
-run no-network-build scripts/check-no-network-build.sh
-run repository scripts/check-repo.sh
+run format "$BASH" "$checkers/check-format.sh"
+run architecture "$BASH" "$checkers/check-architecture.sh"
+run no-network-build "$BASH" "$checkers/check-no-network-build.sh"
+# The committed tree is what a pull request publishes.
+run repository "$BASH" "$checkers/check-repo.sh" --tree HEAD
 run shellcheck run_shellcheck
 run actionlint run_actionlint
 run reuse run_reuse
