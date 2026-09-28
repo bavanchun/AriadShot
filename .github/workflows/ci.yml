@@ -1,0 +1,245 @@
+# SPDX-FileCopyrightText: 2026 The AriadShot Authors
+# SPDX-License-Identifier: GPL-3.0-only
+#
+# Build, test and lint. The job names are the required status checks of the main ruleset. Each build job runs one
+# cmake --workflow --preset ci-<x> command, which reproduces the job locally. Configure, build and test fetch nothing;
+# every download happens in the acquisition steps before them.
+
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    # Weekly, to catch breakage from the rolling Arch Linux packages.
+    - cron: "23 3 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CLANG_FORMAT_VERSION: "22.1.8"
+  QT_PINNED_VERSION: "6.8.4"
+
+jobs:
+  lint:
+    name: lint
+    runs-on: ubuntu-24.04
+    container: archlinux:base-devel
+    timeout-minutes: 30
+    steps:
+      - name: Install tools
+        run: pacman -Syu --noconfirm --needed git jq qt6-base shellcheck actionlint reuse gitleaks python
+      - name: Install clang-format ${{ env.CLANG_FORMAT_VERSION }}
+        run: |
+          python -m venv /opt/clang-format
+          /opt/clang-format/bin/pip install --quiet "clang-format==${CLANG_FORMAT_VERSION}"
+          echo "/opt/clang-format/bin" >>"$GITHUB_PATH"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Resolve the commit range
+        id: range
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+          PUSH_AFTER: ${{ github.event.after }}
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          case "$EVENT_NAME" in
+            pull_request) base=$PR_BASE; head=$PR_HEAD ;;
+            push) base=$PUSH_BEFORE; head=$PUSH_AFTER ;;
+            *) echo "range=" >>"$GITHUB_OUTPUT"; exit 0 ;;
+          esac
+          # Fail closed: never infer a range.
+          if [ -z "$base" ] || [ -z "$head" ] || [ -z "${base//0/}" ] ||
+              ! git cat-file -e "$base^{commit}" || ! git cat-file -e "$head^{commit}"; then
+            echo "Cannot resolve the commit range '$base..$head'" >&2
+            exit 1
+          fi
+          echo "range=$base..$head" >>"$GITHUB_OUTPUT"
+      - name: Lint
+        env:
+          RANGE: ${{ steps.range.outputs.range }}
+        run: |
+          if [ -n "$RANGE" ]; then
+            scripts/check-all.sh --lint-only --range "$RANGE"
+          else
+            scripts/check-all.sh --lint-only
+          fi
+
+  linux-gcc:
+    name: linux-gcc
+    runs-on: ubuntu-24.04
+    container: archlinux:base-devel
+    timeout-minutes: 60
+    env:
+      CMAKE_CXX_COMPILER_LAUNCHER: ccache
+    steps:
+      - name: Install packages
+        run: pacman -Syu --noconfirm --needed git cmake ninja qt6-base jq ccache
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Trust the checkout
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          echo "CCACHE_BASEDIR=$GITHUB_WORKSPACE" >>"$GITHUB_ENV"
+          echo "CCACHE_DIR=$HOME/.ccache" >>"$GITHUB_ENV"
+      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: ~/.ccache
+          key: ccache-linux-gcc-${{ hashFiles('**/CMakeLists.txt', 'CMakePresets.json', 'cmake/**') }}-${{ github.sha }}
+          restore-keys: ccache-linux-gcc-${{ hashFiles('**/CMakeLists.txt', 'CMakePresets.json', 'cmake/**') }}-
+      - name: Build and test
+        run: cmake --workflow --preset ci-dev
+
+  linux-clang:
+    name: linux-clang
+    runs-on: ubuntu-24.04
+    container: archlinux:base-devel
+    timeout-minutes: 90
+    env:
+      CMAKE_CXX_COMPILER_LAUNCHER: ccache
+    steps:
+      - name: Install packages
+        run: pacman -Syu --noconfirm --needed git cmake ninja qt6-base jq ccache clang clazy
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Trust the checkout
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          echo "CCACHE_BASEDIR=$GITHUB_WORKSPACE" >>"$GITHUB_ENV"
+          echo "CCACHE_DIR=$HOME/.ccache" >>"$GITHUB_ENV"
+      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: ~/.ccache
+          key: ccache-linux-clang-${{ hashFiles('**/CMakeLists.txt', 'CMakePresets.json', 'cmake/**') }}-${{ github.sha }}
+          restore-keys: ccache-linux-clang-${{ hashFiles('**/CMakeLists.txt', 'CMakePresets.json', 'cmake/**') }}-
+      - name: AddressSanitizer and UndefinedBehaviorSanitizer
+        run: cmake --workflow --preset ci-asan
+      - name: ThreadSanitizer
+        run: cmake --workflow --preset ci-tsan
+      - name: clang-tidy and clazy on tracked sources
+        run: |
+          cmake --preset dev-clang
+          cmake --build --preset dev-clang
+          # Tracked translation units only, so generated MOC output is never analysed.
+          mapfile -t files < <(git ls-files 'src/*.cpp' 'tests/*.cpp' | sed "s|^|$GITHUB_WORKSPACE/|" |
+            grep -Fxf <(jq -r '.[].file' build/dev-clang/compile_commands.json))
+          run-clang-tidy -quiet -p build/dev-clang -header-filter "^$GITHUB_WORKSPACE/(src|tests)/" "${files[@]}"
+          clazy-standalone -p build/dev-clang/compile_commands.json --checks=level0,level1 "${files[@]}"
+
+  linux-qt-floor:
+    name: linux-qt-floor
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      CXX: g++-13
+      CMAKE_CXX_COMPILER_LAUNCHER: ccache
+      CCACHE_BASEDIR: ${{ github.workspace }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install packages
+        run: sudo apt-get update && sudo apt-get install --yes ninja-build g++-13 jq ccache
+      - uses: jurplel/install-qt-action@a9c63c7c123f3069cff414e7e482d95dfa9d8125 # v4.4.1
+        with:
+          version: ${{ env.QT_PINNED_VERSION }}
+          host: linux
+          target: desktop
+          arch: linux_gcc_64
+          cache: true
+      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: ~/.cache/ccache
+          key: ccache-linux-qt-floor-${{ hashFiles('**/CMakeLists.txt', 'CMakePresets.json', 'cmake/**') }}-${{ github.sha }}
+          restore-keys: ccache-linux-qt-floor-${{ hashFiles('**/CMakeLists.txt', 'CMakePresets.json', 'cmake/**') }}-
+      - name: Build and test
+        env:
+          ARIADSHOT_EXPECT_QT_VERSION: ${{ env.QT_PINNED_VERSION }}
+        run: cmake --workflow --preset ci-dev
+
+  macos:
+    name: macos
+    runs-on: macos-26
+    timeout-minutes: 60
+    env:
+      CMAKE_CXX_COMPILER_LAUNCHER: ccache
+      CCACHE_BASEDIR: ${{ github.workspace }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install packages
+        # The repository scripts need bash 4 or newer; CMake finds Homebrew's bash first through CMAKE_PROGRAM_PATH.
+        run: |
+          brew install ninja bash jq ccache
+          echo "CMAKE_PROGRAM_PATH=$(brew --prefix)/bin" >>"$GITHUB_ENV"
+          echo "CCACHE_DIR=$HOME/.ccache" >>"$GITHUB_ENV"
+      - uses: jurplel/install-qt-action@a9c63c7c123f3069cff414e7e482d95dfa9d8125 # v4.4.1
+        with:
+          version: ${{ env.QT_PINNED_VERSION }}
+          host: mac
+          target: desktop
+          arch: clang_64
+          cache: true
+      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: ~/.ccache
+          key: ccache-macos-${{ hashFiles('**/CMakeLists.txt', 'CMakePresets.json', 'cmake/**') }}-${{ github.sha }}
+          restore-keys: ccache-macos-${{ hashFiles('**/CMakeLists.txt', 'CMakePresets.json', 'cmake/**') }}-
+      - name: Build and test
+        env:
+          ARIADSHOT_EXPECT_QT_VERSION: ${{ env.QT_PINNED_VERSION }}
+        run: cmake --workflow --preset ci-dev
+
+  # The only per-pull-request check of the macOS 14 runtime. Required until GitHub retires the image on 2026-11-02;
+  # then the scheduled run on the macOS 14 VM replaces it.
+  macos-14:
+    name: macos-14
+    runs-on: macos-14
+    timeout-minutes: 60
+    env:
+      CMAKE_CXX_COMPILER_LAUNCHER: ccache
+      CCACHE_BASEDIR: ${{ github.workspace }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install packages
+        run: |
+          brew install ninja bash jq ccache
+          echo "CMAKE_PROGRAM_PATH=$(brew --prefix)/bin" >>"$GITHUB_ENV"
+          echo "CCACHE_DIR=$HOME/.ccache" >>"$GITHUB_ENV"
+      - uses: jurplel/install-qt-action@a9c63c7c123f3069cff414e7e482d95dfa9d8125 # v4.4.1
+        with:
+          version: ${{ env.QT_PINNED_VERSION }}
+          host: mac
+          target: desktop
+          arch: clang_64
+          cache: true
+      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: ~/.ccache
+          key: ccache-macos-14-${{ hashFiles('**/CMakeLists.txt', 'CMakePresets.json', 'cmake/**') }}-${{ github.sha }}
+          restore-keys: ccache-macos-14-${{ hashFiles('**/CMakeLists.txt', 'CMakePresets.json', 'cmake/**') }}-
+      - name: Build and test
+        env:
+          ARIADSHOT_EXPECT_QT_VERSION: ${{ env.QT_PINNED_VERSION }}
+        run: cmake --workflow --preset ci-dev

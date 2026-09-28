@@ -1,0 +1,13 @@
+# SPDX-FileCopyrightText: 2026 The AriadShot Authors
+# SPDX-License-Identifier: GPL-3.0-only
+#
+# Keeps the pinned action commits current. Only GitHub Actions: C++ dependencies come from system packages and
+# third_party/, which Dependabot does not manage.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: ci

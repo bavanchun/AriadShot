@@ -1,0 +1,65 @@
+# SPDX-FileCopyrightText: 2026 The AriadShot Authors
+# SPDX-License-Identifier: GPL-3.0-only
+#
+# The commit-policy required check: pull request title and body, every commit message, pull request size and DCO.
+# It also runs when labels change, because the size/exception label changes the size verdict.
+
+name: pr-policy
+
+on:
+  pull_request:
+    types: [opened, synchronize, edited, labeled, unlabeled]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-policy-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  commit-policy:
+    name: commit-policy
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Resolve the commit range
+        # Fail closed: both ends must exist in the full history.
+        run: |
+          if [ -z "$BASE_SHA" ] || [ -z "$HEAD_SHA" ] ||
+              ! git cat-file -e "$BASE_SHA^{commit}" || ! git cat-file -e "$HEAD_SHA^{commit}"; then
+            echo "Cannot resolve the commit range '$BASE_SHA..$HEAD_SHA'" >&2
+            exit 1
+          fi
+      - name: Pull request title and body
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          printf '%s' "$PR_TITLE" >"$RUNNER_TEMP/pr-title"
+          printf '%s' "$PR_BODY" >"$RUNNER_TEMP/pr-body"
+          status=0
+          scripts/check-commit-message.sh --pr-title "$RUNNER_TEMP/pr-title" || status=1
+          scripts/check-commit-message.sh --pr-body "$RUNNER_TEMP/pr-body" || status=1
+          exit "$status"
+      - name: Commit messages
+        if: ${{ !cancelled() }}
+        run: scripts/check-commit-message.sh --range "$BASE_SHA..$HEAD_SHA"
+      - name: Pull request size
+        if: ${{ !cancelled() }}
+        env:
+          LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+        run: scripts/check-pr-size.sh --range "$BASE_SHA..$HEAD_SHA" --labels-json "$LABELS"
+      - name: Developer Certificate of Origin
+        if: ${{ !cancelled() }}
+        env:
+          AUTHOR: ${{ github.event.pull_request.user.login }}
+          OWNER: ${{ github.repository_owner }}
+        run: scripts/check-dco.sh --range "$BASE_SHA..$HEAD_SHA" --author "$AUTHOR" --owner "$OWNER"
