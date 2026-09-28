@@ -149,6 +149,8 @@ function(ariadshot_add_architecture_fixture fixture)
                 "-DCMAKE_MAKE_PROGRAM=${CMAKE_MAKE_PROGRAM}"
                 "-DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}"
                 "-DQt6_DIR=${Qt6_DIR}"
+                # Qt's own dependency lookups (tools, plugins) must resolve to the same Qt as this build.
+                "-DCMAKE_PREFIX_PATH=${QT6_INSTALL_PREFIX}"
                 "-DARIADSHOT_CMAKE_DIR=${PROJECT_SOURCE_DIR}/cmake")
     if(arg_EXPECT)
         set_tests_properties(${name} PROPERTIES PASS_REGULAR_EXPRESSION "${arg_EXPECT}")
