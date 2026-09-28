@@ -166,6 +166,11 @@ ariadshot_add_architecture_fixture(arch-forbidden-direct
 ariadshot_add_architecture_fixture(arch-forbidden-indirect
     EXPECT "ariadshot-arch: core may not reach Qt6::Gui \\(core -> fixture_helper -> Qt6::Gui\\)")
 ariadshot_add_architecture_fixture(arch-allowed-transitive)
+ariadshot_add_architecture_fixture(arch-qt-plugin-allowed)
+ariadshot_add_architecture_fixture(arch-qt-plugin-forbidden
+    EXPECT "ariadshot-arch: core may not link Qt6::Gui \\(allowed: Qt6::Core\\)")
+ariadshot_add_architecture_fixture(arch-qt-plugin-not-a-plugin
+    EXPECT "ariadshot-arch: app imports Qt6::Gui, which is not a Qt module's plugin")
 
 # Include rules of scripts/check-architecture.sh, on small source trees.
 function(ariadshot_add_include_case case)

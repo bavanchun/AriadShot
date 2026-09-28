@@ -113,7 +113,8 @@ CIEDE2000 data of Sharma, Wu and Dalal (2005).
 Negative cases must fail for the right reason: each is a CTest test whose `PASS_REGULAR_EXPRESSION` matches the
 checker's own message, so an unrelated error cannot make it pass.
 
-- `build.arch-*` configure the fixtures in `tests/cmake/` with the real architecture check.
+- `build.arch-*` configure the fixtures in `tests/cmake/` with the real architecture check, including Qt's
+  plugin-import expression built by Qt's own helper (allowed, forbidden, and around a target that is not a plugin).
 - `scripts.arch-include.*` run `scripts/check-architecture.sh` on the trees in `tests/scripts/arch-include-cases/`.
 - `scripts.commit-message.*` run one case each of `tests/scripts/commit-message-cases.txt`.
 - `scripts.agent-guard.<runtime>.*` feed Claude- and agy-shaped payloads from `tests/scripts/agent-guard-cases.tsv`

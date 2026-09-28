@@ -58,8 +58,12 @@ shows them; that is what lets gate G1 swap the overlay host for the cost of one 
    platform library; for `render` and `ui` `Qt6::Widgets`, `Qt6::Quick`, `Qt6::GuiPrivate` and platform libraries.
    Allowed transitive paths (`render → core → Qt6::Core`) pass.
 3. **Normalisation.** Aliases resolve through `ALIASED_TARGET`; imported targets compare by name; `$<LINK_ONLY:x>` and
-   `$<BUILD_INTERFACE:x>` are unwrapped; any other generator expression fails the check (fail closed); plain library
-   paths and flags are rejected in module link properties.
+   `$<BUILD_INTERFACE:x>` are unwrapped. Qt's plugin-import expression (a condition carrying Qt's
+   `$<BOOL:QT_IS_PLUGIN_GENEX>` marker that selects a plugin or its `_init` object library), which Qt's target
+   finalizer adds for static plugins such as the Apple permission plugins, counts as an edge to the Qt module the
+   plugin extends (its `QT_MODULE`), so the rules apply to that module; a target that is not a Qt plugin fails. Any
+   other generator expression fails the check (fail closed); plain library paths and flags are rejected in module link
+   properties.
 4. **Include rule.** `scripts/check-architecture.sh` checks `#include` lines per directory, which catches a header that
    no link shows (for example a public header of an allowed module that pulls in a forbidden one). It also rejects
    desktop-name checks (`XDG_CURRENT_DESKTOP`, compositor names) outside `backends/`.

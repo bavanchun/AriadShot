@@ -61,7 +61,8 @@ scripts, presets and workflows themselves.
 - **One CMake target per module**, `ariadshot_<module>` with the alias `AriadShot::<module>`, declared with its allowed
   dependencies. A configure-time check enforces direct edges for every module and reachability for `core`, `render`
   and `ui` (allowed paths such as `render → core → Qt6::Core` pass; aliases, `$<LINK_ONLY:…>` and `$<BUILD_INTERFACE:…>`
-  are normalised; anything else fails closed). `scripts/check-architecture.sh` checks `#include` lines per directory,
+  are normalised, and Qt's static-plugin imports count as edges to the plugin's Qt module; anything else fails
+  closed). `scripts/check-architecture.sh` checks `#include` lines per directory,
   including headers pulled in through an allowed module, and rejects desktop-name checks outside `src/backends/`.
   Fixtures prove both checkers fail with their own messages. Modules without code are INTERFACE targets: they declare
   the graph and carry no placeholder code.

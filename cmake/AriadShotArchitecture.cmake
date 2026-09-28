@@ -20,7 +20,9 @@
 #      not contain a forbidden target (see _ariadshot_arch_forbidden). Imported targets are leaves compared by name,
 #      so allowed paths such as render -> core -> Qt6::Core pass.
 #   3. Normalisation: aliases resolve to their real target; $<LINK_ONLY:x> and $<BUILD_INTERFACE:x> are unwrapped;
-#      any other generator expression, plain library path or linker flag fails closed until a rule is added here.
+#      Qt's plugin-import expression counts as an edge to the Qt module that the plugin extends (see
+#      _ariadshot_arch_qt_plugin_module); any other generator expression, plain library path or linker flag fails closed
+#      until a rule is added here.
 
 include_guard(GLOBAL)
 
@@ -67,6 +69,35 @@ function(_ariadshot_arch_canonical name out)
     set(${out} "${name}" PARENT_SCOPE)
 endfunction()
 
+# Sets <out> to the Qt module target that the Qt plugin <plugin> extends, or to "" when <plugin> is not a Qt plugin.
+# Qt's target finalizer links every static plugin of a Qt module into the executables that use the module, as
+# $<condition:Qt6::<Plugin>> and $<condition:Qt6::<Plugin>_init>, the object library that registers it; on Apple the
+# permission plugins are static even in a shared Qt. Such an edge is attributed to the plugin's module (the QT_MODULE
+# property of Qt's imported plugin target), so the rules of this file apply to that module.
+function(_ariadshot_arch_qt_plugin_module plugin out)
+    set(module "")
+    set(candidates "${plugin}")
+    if(plugin MATCHES "^(.+)_init$")
+        list(APPEND candidates "${CMAKE_MATCH_1}")
+    endif()
+    foreach(candidate IN LISTS candidates)
+        if(NOT TARGET "${candidate}")
+            continue()
+        endif()
+        get_target_property(plugin_type "${candidate}" QT_PLUGIN_TYPE)
+        get_target_property(qt_module "${candidate}" QT_MODULE)
+        if(NOT plugin_type OR NOT qt_module OR NOT candidate MATCHES "^([A-Za-z0-9_]+)::")
+            continue()
+        endif()
+        # The module target lives in the plugin's namespace (Qt6::).
+        if(TARGET "${CMAKE_MATCH_1}::${qt_module}")
+            _ariadshot_arch_canonical("${CMAKE_MATCH_1}::${qt_module}" module)
+            break()
+        endif()
+    endforeach()
+    set(${out} "${module}" PARENT_SCOPE)
+endfunction()
+
 # Returns the normalised direct link entries of <target>, and error lines for entries the check cannot interpret.
 function(_ariadshot_arch_direct_entries target label out_entries out_errors)
     set(entries "")
@@ -84,6 +115,15 @@ function(_ariadshot_arch_direct_entries target label out_entries out_errors)
             while(value MATCHES "^\\$<(LINK_ONLY|BUILD_INTERFACE):(.*)>$")
                 set(value "${CMAKE_MATCH_2}")
             endwhile()
+            # Qt's plugin-import expression: a condition that carries Qt's own marker, selecting one Qt target.
+            if(value MATCHES "^\\$<\\$<.*\\$<BOOL:QT_IS_PLUGIN_GENEX>.*>:([A-Za-z0-9_]+::[A-Za-z0-9_]+)>$")
+                set(plugin "${CMAKE_MATCH_1}")
+                _ariadshot_arch_qt_plugin_module("${plugin}" value)
+                if(NOT value)
+                    list(APPEND errors "ariadshot-arch: ${label} imports ${plugin}, which is not a Qt module's plugin")
+                    continue()
+                endif()
+            endif()
             if(value MATCHES "\\$<")
                 list(APPEND errors "ariadshot-arch: ${label} uses an unsupported generator expression: ${value}")
             elseif(NOT TARGET "${value}")
