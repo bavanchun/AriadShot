@@ -23,7 +23,8 @@ It never installs anything. On Arch, install packages only after a full system u
 supports only full upgrades. The repository scripts need bash 4 or newer; on macOS install Homebrew's `bash`.
 
 Configure, build and test never download anything: dependencies come from system packages or `third_party/`. Any
-download belongs to a separate acquisition step (see the specification, §3).
+download belongs to a separate acquisition step
+([`docs/spec/13-build-ci-release.md` §3](../spec/13-build-ci-release.md#3-dependencies)).
 
 ## Presets
 
@@ -88,12 +89,15 @@ fast subset on every commit and push.
 
 | Job | Where | Command |
 | :--- | :--- | :--- |
-| `lint` | Arch Linux container | `scripts/check-all.sh --lint-only` over the pull request's commit range |
-| `commit-policy` | Ubuntu | pull request title and body, commit messages, pull request size, DCO |
+| `lint` | Arch Linux container | `scripts/check-all.sh --lint-only` over the pull request's commit range, taken from the base commit |
+| `commit-policy` | Ubuntu | pull request title and body, commit messages, pull request size, DCO, with the base commit's checkers |
 | `linux-gcc` | Arch Linux container | `cmake --workflow --preset ci-dev` |
 | `linux-clang` | Arch Linux container | `ci-asan` and `ci-tsan` workflows, then clang-tidy and clazy on tracked sources |
 | `linux-qt-floor` | Ubuntu 24.04, GCC 13, Qt 6.8.4 | `cmake --workflow --preset ci-dev` |
 | `macos` | macOS 26, Qt 6.8.4 | `cmake --workflow --preset ci-dev` |
 | `macos-14` | macOS 14, Qt 6.8.4 | `cmake --workflow --preset ci-dev` (until GitHub retires the image) |
 
-Each build job writes the Qt, compiler and CMake versions it used to the job summary.
+Each build job writes the Qt, compiler and CMake versions it used to the job summary. `lint` and `commit-policy` run
+the checkers of the pull request's base commit, so a change to a checker applies from the next pull request on
+([Trusted policy checks](agent-workflow.md#trusted-policy-checks)). To run a checker version against your branch
+yourself, call it from another checkout: `/path/to/other/scripts/check-all.sh` checks the current directory.

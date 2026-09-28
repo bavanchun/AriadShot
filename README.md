@@ -26,8 +26,8 @@ listed in [`PROVENANCE.md`](PROVENANCE.md). AriadShot does not use MacShot's nam
 
 ## Build
 
-You need CMake 3.28 or newer, Ninja, a C++20 compiler and Qt 6.8 or newer (Core, Gui, Widgets, Test). On Arch Linux
-these are `cmake ninja gcc qt6-base`.
+You need CMake 3.28 or newer, Ninja, a C++20 compiler, Qt 6.8 or newer (Core, Gui, Widgets, Test), git and jq (the
+tests of the repository scripts use them). On Arch Linux these are `cmake ninja gcc qt6-base git jq`.
 
 ```sh
 cmake --workflow --preset dev        # configure, build and run the offscreen test suite
