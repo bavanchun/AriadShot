@@ -11,6 +11,10 @@
 #
 # Every push to the pull request starts a new run that waits for a new approval. The ruleset's required checks are
 # strict, so a head behind main cannot merge; updating it creates a new head and a new approval.
+#
+# GitHub blocks pull_request_target in public repositories by default from 2026-11-02. The repository therefore has an
+# Actions event policy, created by scripts/github/setup-repository.sh and checked by verify-identity.sh owner, that
+# permits pull_request_target for this workflow file only.
 
 name: owner-gate
 

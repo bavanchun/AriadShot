@@ -13,7 +13,8 @@
 #       page, because no API lists them.
 #   verify-identity.sh owner [--repo OWNER/NAME]
 #       Run with the owner's own login. Checks the owner-review environment, both rulesets, the strict required
-#       checks and the approval setting for workflow runs from forks.
+#       checks, the Actions event policy that lets the owner gate run, and the approval setting for workflow runs from
+#       forks.
 #
 # Prints PASS, WARN or FAIL per check; exits 1 when a check fails.
 
@@ -175,6 +176,21 @@ verify_owner() {
             fi
         fi
     done < <(gh api "repos/$repo/rulesets" --jq '.[] | "\(.id)\t\(.name)"')
+
+    # GitHub blocks pull_request_target in public repositories by default from 2026-11-02 unless an event policy
+    # permits it; without it the gate never runs and no pull request can merge.
+    local gate_policy
+    gate_policy=$(gh api "repos/$repo/actions/policies" 2>/dev/null |
+        jq -c '[.. | objects | select(.name? == "owner-gate-pull-request-target")] | first // empty' 2>/dev/null)
+    if [ -z "$gate_policy" ]; then
+        fail "no Actions event policy permits pull_request_target for the owner gate (run setup-repository.sh)"
+    elif jq -e '.enforcement == "active"
+            and ([.rules[] | select(.type == "restrict_action_events") | .parameters.allowed_events[]] == ["pull_request_target"])
+            and (.conditions.workflow_path.include == [".github/workflows/owner-gate.yml"])' <<<"$gate_policy" >/dev/null; then
+        pass "the owner gate's event policy permits pull_request_target for .github/workflows/owner-gate.yml only"
+    else
+        fail "the owner gate's event policy is not as setup-repository.sh creates it: $gate_policy"
+    fi
 
     local policy
     policy=$(gh api "repos/$repo/actions/permissions/fork-pr-contributor-approval" --jq .approval_policy 2>/dev/null)

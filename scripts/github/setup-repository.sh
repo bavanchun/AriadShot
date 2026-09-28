@@ -12,6 +12,8 @@
 #     deletion or force push, and strict required checks (the CI jobs plus owner-consent) pinned to the GitHub Actions
 #     app; no bypass actors;
 #   - the "release-tags" ruleset on refs/tags/v*: creation, update and deletion restricted; no bypass actors;
+#   - an Actions event policy that permits pull_request_target for the owner gate's workflow file only, because GitHub
+#     blocks that event in public repositories by default from 2026-11-02;
 #   - labels.tsv and milestones.tsv from this directory.
 # Then it prints the active configuration back.
 #
@@ -34,6 +36,8 @@ while [ $# -gt 0 ]; do
 done
 owner=${repo%%/*}
 here=$(cd -- "$(dirname -- "$0")" && pwd)
+readonly GATE_POLICY_NAME=owner-gate-pull-request-target
+readonly GATE_WORKFLOW=.github/workflows/owner-gate.yml
 
 required_checks=(lint commit-policy linux-gcc linux-clang linux-qt-floor macos)
 [ "$with_macos_14" = 1 ] && required_checks+=(macos-14)
@@ -85,6 +89,26 @@ api PATCH "repos/$repo" "$(jq -cn '{
 api PUT "repos/$repo/private-vulnerability-reporting"
 api PUT "repos/$repo/actions/permissions/fork-pr-contributor-approval" \
     '{"approval_policy":"all_external_contributors"}'
+
+step "Actions event policy for the owner gate"
+# GitHub blocks pull_request_target in public repositories by default from 2026-11-02, unless an applicable event
+# policy permits it. This policy applies only to the owner gate's workflow file and permits only that event; the gate
+# checks out nothing and runs no pull request code.
+gate_policy=$(jq -cn --arg name "$GATE_POLICY_NAME" --arg path "$GATE_WORKFLOW" '{
+    name: $name, enforcement: "active",
+    conditions: {workflow_path: {include: [$path], exclude: []}},
+    rules: [{type: "restrict_action_events", parameters: {allowed_events: ["pull_request_target"]}}]
+}')
+policy_id=""
+if [ "$dry_run" = 0 ]; then
+    policy_id=$(gh api "repos/$repo/actions/policies" |
+        jq -r --arg name "$GATE_POLICY_NAME" '[.. | objects | select(.name? == $name) | .id] | first // empty')
+fi
+if [ -n "$policy_id" ]; then
+    api PUT "repos/$repo/actions/policies/$policy_id" "$gate_policy"
+else
+    api POST "repos/$repo/actions/policies" "$gate_policy"
+fi
 
 step "Environment owner-review"
 api PUT "repos/$repo/environments/owner-review" "$(jq -cn --argjson id "$owner_id" '{
@@ -185,6 +209,8 @@ gh api "repos/$repo" --jq '{allow_squash_merge, allow_merge_commit, allow_rebase
     secret_scanning: .security_and_analysis.secret_scanning.status,
     push_protection: .security_and_analysis.secret_scanning_push_protection.status}'
 gh api "repos/$repo/actions/permissions/fork-pr-contributor-approval"
+gh api "repos/$repo/actions/policies" |
+    jq --arg name "$GATE_POLICY_NAME" '[.. | objects | select(.name? == $name) | {name, enforcement, conditions, rules}]'
 gh api "repos/$repo/environments/owner-review" --jq '{name, can_admins_bypass,
     reviewers: [.protection_rules[]? | select(.type == "required_reviewers") | .reviewers[].reviewer.login],
     prevent_self_review: [.protection_rules[]? | select(.type == "required_reviewers") | .prevent_self_review][0]}'
