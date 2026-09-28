@@ -1,0 +1,23 @@
+# SPDX-FileCopyrightText: 2026 The AriadShot Authors
+# SPDX-License-Identifier: GPL-3.0-only
+#
+# clang-format 22.x (CI pins 22.1.8). Include order: own header, project, Qt, standard and system.
+---
+Language: Cpp
+BasedOnStyle: LLVM
+Standard: c++20
+IndentWidth: 4
+ColumnLimit: 120
+PointerAlignment: Left
+BreakBeforeBraces: Attach
+StatementAttributeLikeMacros: [Q_EMIT]
+SortIncludes: CaseSensitive
+IncludeBlocks: Regroup
+IncludeIsMainRegex: '$'
+IncludeCategories:
+  - Regex: '^"'
+    Priority: 1
+  - Regex: '^<Q[A-Za-z0-9]*(/[A-Za-z0-9_.]+)*>$'
+    Priority: 2
+  - Regex: '^<'
+    Priority: 3

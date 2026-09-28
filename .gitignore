@@ -1,7 +1,13 @@
+# SPDX-FileCopyrightText: 2026 The AriadShot Authors
+# SPDX-License-Identifier: GPL-3.0-only
+
 # Build trees
 /build/
 /out/
 CMakeUserPresets.json
+
+# Per-worktree agent state (owner file, process registry)
+.agent/
 
 # Editor and tool state
 .cache/
@@ -10,6 +16,12 @@ CMakeUserPresets.json
 *.swp
 .DS_Store
 
-# Local environment and secrets
-.env
-*.env
+# Personal agent instructions switch Claude Code to CLAUDE.md-only mode
+CLAUDE.local.md
+
+# Local environment, keys and signing material
+.env*
+*.pem
+*.key
+*.p12
+*.mobileprovision
