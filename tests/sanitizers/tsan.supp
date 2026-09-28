@@ -1,0 +1,11 @@
+# SPDX-FileCopyrightText: 2026 The AriadShot Authors
+# SPDX-License-Identifier: GPL-3.0-only
+#
+# ThreadSanitizer suppressions for the tsan preset. The system Qt is not instrumented, so ThreadSanitizer cannot see
+# the synchronisation inside it. Tests labelled tsan-safe use no Qt threading of their own; the only Qt thread in them
+# is QtTest's watchdog, which QtTest starts and joins itself. Every entry names that watchdog's code path only.
+
+# The watchdog's condition variable lives on the main thread's stack; its join happens inside Qt.
+race:QPlainTestLogger::stopLogging
+# The watchdog thread is joined inside Qt, so ThreadSanitizer reports it as leaked.
+thread:QThread::start
