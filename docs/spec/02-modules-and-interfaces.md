@@ -6,9 +6,11 @@ SPDX-License-Identifier: GPL-3.0-only
 # 02. Modules and Interfaces
 
 Part of the [AriadShot technical specification](README.md). This file defines every CMake module: what it owns, its
-public interface, and which modules and libraries it may depend on. The enforcement code is
-`cmake/AriadShotArchitecture.cmake` and `scripts/check-architecture.sh`; when they and this file disagree, fix one of
-them in the same pull request.
+public interface, and which modules and libraries it may depend on. Each module's allowed list is the `ALLOWED`
+argument of its `ariadshot_add_module(…)` call in `src/<module>/CMakeLists.txt` (the daemon executable's is its
+`ariadshot_architecture_register(…)` call in `src/app/CMakeLists.txt`). `cmake/AriadShotArchitecture.cmake` checks
+those lists and the portable modules' reachability at configure time, and `scripts/check-architecture.sh` checks
+include directives; when they and this file disagree, fix one of them in the same pull request.
 
 ## 1. Module graph
 
@@ -38,8 +40,8 @@ files owned by the manager role (see `docs/dev/agent-workflow.md`); they land be
 | `cli` | `src/cli/` | nothing from Qt; the C++ standard library and POSIX | | the `ariadshot` command-line client |
 
 Edges marked "from Mn" or "from Gn" are expected additions that the architecture requires but that no code needs yet.
-Each is added to `cmake/AriadShotArchitecture.cmake` in the pull request that brings its first consumer, by the manager
-role, and this table is the approval for it. Any edge not listed here needs an ADR.
+Each is added to the `ALLOWED` list of the module's `ariadshot_add_module(…)` call in the pull request that brings its
+first consumer, by the manager role, and this table is the approval for it. Any edge not listed here needs an ADR.
 
 **Why these boundaries.** `core` is QtCore-only so models, stores and algorithms are testable without a display and
 reusable by tools. `render` and `ui` are QtGui-only so the canvas, chrome and renderer cannot depend on the window that
