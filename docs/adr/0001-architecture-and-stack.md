@@ -259,7 +259,7 @@ M0 proves or kills the load-bearing assumptions before feature work. Full pass c
 | G4 Wayland connections | 10 minutes of captures plus unfocused clipboard copies without a stall longer than one frame; a data-control copy survives overlay dismissal | bind on Qt's connection behind a Qt-version-pinned adapter |
 | G5 Studio contract | a decoded FFmpeg frame through `QRhi` (Vulkan) in a `QRhiWidget` and offscreen, encoded with VA-API into fMP4, within the §4 thresholds; the OpenGL fallback runs | fix; a `QRhi`-specific failure on both APIs with a passing wgpu spike reopens the stack |
 | G6 Recording path | 1080p60 on image-copy DMA-BUF and on PipeWire: dropped frames, CPU and copies per frame; 200 kill trials | choose the better path; revise the budget with the numbers, never silently |
-| G7 macOS environment | a macOS 26 Mac and a macOS 14 VM on it as a self-hosted runner: tests on both, MacShot built at `b4d4f3a` (corpus on 26), the overlay skeleton, ad-hoc inside-out signing that passes `codesign --verify --deep --strict`, the Gatekeeper first-open steps, and whether privacy grants and Keychain access survive a replaced bundle, ad-hoc and self-signed | without a Mac, macOS stays "builds only" and corpus lines have reduced confidence; without the VM, the minimum narrows |
+| G7 macOS environment | a macOS 26 Mac and a macOS 14 VM on it as a self-hosted runner: tests on both, MacShot built at `b4d4f3a` (corpus on 26), the overlay skeleton, ad-hoc inside-out signing that passes `codesign --verify --deep --strict`, the Gatekeeper first-open steps, the pinned Qt minor listing macOS 14 as supported, and whether privacy grants and Keychain access survive a replaced bundle, ad-hoc and self-signed | without a Mac, macOS stays "builds only" and corpus lines have reduced confidence; without the VM, the minimum narrows to the oldest version that passes and DEV-27 is updated; macOS milestones slip, Linux milestones do not |
 | G8 Baselines | a baseline for every budget of §9 on topologies P1–P3 | each budget is kept, revised or rejected with numbers |
 
 At the end of M0 each outcome is recorded in its own ADR: the host chosen, the recording source chosen, each budget
@@ -270,27 +270,28 @@ kept or revised.
 Targets are hypotheses until G8 records baselines; afterwards each budget is kept, revised or rejected with measured
 numbers. Topologies: **P1** the reference host (1920×1200 plus a display rotated to 1080×1920, scale 1); **P2** the
 panel at fractional scale 1.25 (nested or headless); **P3** one 3840×2160 output at scale 1 and 2. Every run records
-p50 and p95 frame times, resident memory, CPU pixel copies per frame and dropped frames.
+p50 and p95 frame times, resident memory, CPU pixel copies per frame and dropped frames. Workloads W0–W5 are named
+where they are defined; the size budgets have no workload.
 
 | Budget | Workload | Target |
 | :--- | :--- | :--- |
-| Hotkey → pointer output frozen and interactive | warm daemon, P1, 20 own windows hidden first | ≤ 100 ms p50, ≤ 150 ms p95 (MacShot's best case: under 400 ms) |
-| Hotkey → all outputs frozen | same | ≤ 250 ms p95 |
-| GNOME hotkey → overlay | GNOME 48+ | measured and documented; no fixed promise |
-| macOS hotkey → overlay | the G7 Mac | ≤ MacShot on the same Mac |
-| Annotation drag or selection resize | 50 mixed annotations; P1, P2, P3 | ≤ 16.7 ms p95 |
-| Copy or confirm → image on the clipboard | 1920×1200 PNG | ≤ 150 ms p95 |
-| Idle daemon | 10 minutes idle after 20 captures | ≤ 100 MB resident, 0 % CPU, no overlay buffers retained |
-| 1080p60 recording | 10 minutes of a scrolling browser page, VA-API | ≤ 15 % of one core, zero dropped frames, ≤ 1 CPU pixel copy per frame |
-| Studio preview | 1080p take, every look enabled | 60 fps p95 on Vulkan |
+| Hotkey → pointer output frozen and interactive | W1: warm daemon, P1, 20 own windows hidden first | ≤ 100 ms p50, ≤ 150 ms p95 (MacShot's best case: under 400 ms) |
+| Hotkey → all outputs frozen | W1 | ≤ 250 ms p95 |
+| GNOME hotkey → overlay | W1 on GNOME 48+ | measured and documented; no fixed promise |
+| macOS hotkey → overlay | W1 on the G7 Mac | ≤ MacShot on the same Mac |
+| Annotation drag or selection resize | W2: 50 mixed annotations; P1, P2, P3 | ≤ 16.7 ms p95 |
+| Copy or confirm → image on the clipboard | W3: 1920×1200 PNG | ≤ 150 ms p95 |
+| Idle daemon | W0: 10 minutes idle after 20 captures | ≤ 100 MB resident, 0 % CPU, no overlay buffers retained |
+| 1080p60 recording | W4: 10 minutes of a scrolling browser page, VA-API | ≤ 15 % of one core, zero dropped frames, ≤ 1 CPU pixel copy per frame |
+| Studio preview | W5: 1080p take, every look enabled | 60 fps p95 on Vulkan |
 | Linux package size | AUR package, system Qt and FFmpeg, no optional models | ≤ 40 MB installed |
 | Core model bundle | Linux default catalogue | ≤ 40 MB; larger models on demand |
 | macOS app bundle | ad-hoc-signed DMG with Qt and FFmpeg frameworks | ≤ 160 MB |
 
 Robustness gates: no crash in 24 hours of scripted capture and annotate cycles under ASan and UBSan; history survives
-`kill -9` at any point with zero lost committed entries; at least 95 % of 200 `kill -9` trials of 10-minute recordings
-leave a file playable up to the last synced fragment, judged by libavformat and GPAC `MP4Box`; every parser of
-untrusted input survives a 24-hour fuzzing run.
+`kill -9` at any point with zero lost committed entries; at least 200 `kill -9` trials at random points of 10-minute
+recordings, in at least 95 % of which the file is playable up to the last synced fragment, judged by libavformat and
+GPAC `MP4Box`; every parser of untrusted input survives a 24-hour fuzzing run.
 
 ### 10. Milestones M0–M5
 
@@ -303,8 +304,8 @@ prefixes. The M1 atomic set and each milestone's content are in
 | :--- | :--- | :--- | :--- | :--- |
 | M0 Foundations | retire the gate hypotheses | measurements and decisions | G7 | — |
 | M1 MVP | replace the desktop's screenshot flow on Hyprland; everything outside the M1 set is absent, and a request for it answers with an explicit error | 100 % of the M1 atomic set | builds, launches, captures, copies | best effort |
-| M2 Screenshot parity | beautify, effects, recognition, scroll capture, sharing substitutes, uploads, full Settings, 40 locales | 100 % of `shot` lines | the M1 set with native backends | the M1 set |
-| M3 Recording parity | the recorder, HUD, audio, crash recovery, telemetry, self-exclusion; no GIF recording (MacShot exports GIF only from the studio) | + `rec` lines | 100 % of `shot` | ≥ 90 % of `shot` |
+| M2 Screenshot parity | beautify, effects, recognition, scroll capture, sharing substitutes, uploads, full Settings, 40 locales | 100 % of `shot` lines | the M1 set with native backends, macOS feature gates 1–4, and an ad-hoc-signed, never-notarized build (DEV-40) | the M1 set |
+| M3 Recording parity | the recorder, HUD, audio, crash recovery, telemetry, self-exclusion, and the opt-in input helper for click and keystroke telemetry on Wayland with its ADR (DEV-24); no GIF recording (MacShot exports GIF only from the studio) | + `rec` lines | 100 % of `shot` | ≥ 90 % of `shot` |
 | M4 Studio parity | the v4.4 studio: project model, inspector, timeline, auto-zoom, captions, MP4 and GIF export | + `studio` lines | + `rec` | + `rec` where possible |
 | M5 Release 1.0 | breadth, packaging, updates, offline build, accessibility, licence release gates | 100 % of applicable lines | 100 % of applicable lines | ≥ 95 %; GNOME gaps all registered |
 
@@ -386,12 +387,29 @@ Accepted trade-offs:
 - **GPL-3.0-only** follows MacShot's actual grant; the combined work can never move to a later GPL unless upstream
   grants it.
 
-Top risks and where they are retired: IME in the overlay's text control and QWidget behaviour on layer-shell (G1);
-hotkey-to-overlay latency (G1, G8); the CPU canvas at 4K (G1 step 6, M1); passive click and key telemetry on Wayland
-(opt-in helper, M3); GNOME overlay parity (never full, disclosed); `QRhi` changes between Qt minors (pinned per release,
-G5); Apple-only looks on Linux (fitted LUTs, icon sheet, registered substitutions, M2); two Wayland connections stalling
-each other (G4); no Mac or no macOS 14 VM (G7); a missed licence obligation (`PROVENANCE.md`, the model catalogue, the
-codec review before M5); the image-copy recording path (G6).
+Risks and where they are retired. Mitigations are in
+[`docs/spec/01-architecture-overview.md`](../spec/01-architecture-overview.md#11-top-risks) §11, and likelihood and
+impact in the [PRD](../prd.md#11-risks) §11, whose RK-1 to RK-17 are these risks in the same order.
+
+| Risk | Where retired |
+| :--- | :--- |
+| R1 IME (fcitx5, Vietnamese Telex, CJK) fails in the overlay's canvas text control | G1 |
+| R2 QWidget windows misbehave on `layer-shell-qt` | G1 |
+| R3 hotkey-to-overlay latency misses 150 ms p95 | G1, G8 |
+| R4 the CPU canvas misses the frame budget at 4K or when zooming the editor | G1 step 6, M1 |
+| R5 passive click and key telemetry is unavailable on Wayland (opt-in helper, DEV-24) | M3 |
+| R6 GNOME overlay parity is impossible with public protocols (disclosed, DEV-26) | M5 |
+| R7 `QRhi` changes between Qt minors (Qt minor pinned per release) | G5, M4 |
+| R8 Apple-specific looks cannot be reproduced exactly on Linux (fitted LUTs, icon sheet, DEV-02 to DEV-05) | M2 |
+| R9 KWin restricts image-copy capture to privileged clients (runtime probe, ScreenCast restore tokens) | M2 |
+| R10 C++ memory-safety defects in a long-running daemon (§2 measures, fuzzing gates) | continuous |
+| R11 MacShot keeps evolving (parity pinned to `b4d4f3a`; upstream diffs reviewed per release) | continuous |
+| R12 Google Drive and imgbb need AriadShot's own keys and OAuth client (user-supplied keys, DEV-31) | M2 |
+| R13 two Wayland connections stall each other, or output matching by name fails | G4 |
+| R14 no Mac, or no macOS 14 VM, for the corpus, builds and parity tests | G7 |
+| R15 recording cannot exclude AriadShot's own surfaces on Wayland (per-desktop strategy, DEV-22, DEV-23) | M3 |
+| R16 a licence obligation is missed (`PROVENANCE.md`, the model catalogue, the codec review) | M5 release gate |
+| R17 the image-copy recording path drops frames or costs too much CPU at 1080p60 | G6 |
 
 ## Evidence and history
 
