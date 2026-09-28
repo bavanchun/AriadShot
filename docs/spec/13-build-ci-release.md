@@ -138,7 +138,7 @@ All options come from the interface target `AriadShot::options` in `cmake/AriadS
 | Scope of analysis | tracked translation units under `src/` and `tests/` (`git ls-files`), header filter on the source tree, so generated MOC output is never analysed | `linux-clang` |
 | Module boundaries | `scripts/check-architecture.sh` and the configure-time link check ([02 §2](02-modules-and-interfaces.md)) | pre-commit hook, `lint`, every configure |
 | Network-free build | `scripts/check-no-network-build.sh` | `lint` |
-| Repository hygiene | `scripts/check-repo.sh`: no private paths in the published content (the index in the pre-commit hook, the commit's tree in `lint`), no `CLAUDE.md`, `CLAUDE.local.md`, `.claude/CLAUDE.md` or `GEMINI.md` (tracked or untracked), every nested `AGENTS.md` listed in the root file, the owner gate embedding the current `scripts/github/gate-inspect.sh` | pre-commit hook, `lint` |
+| Repository hygiene | `scripts/check-repo.sh`: no private paths in the published content or file paths (the index in the pre-commit hook, the commit's tree in `lint`), no `CLAUDE.md`, `CLAUDE.local.md`, `.claude/CLAUDE.md` or `GEMINI.md` (tracked or untracked), every nested `AGENTS.md` listed in the root file, the owner gate embedding the current `scripts/github/gate-inspect.sh` | pre-commit hook, `lint` |
 | Shell and workflows | `shellcheck`, `actionlint` | `lint` |
 | Licence headers | `reuse lint` | `lint` |
 | Secrets | `gitleaks` (distribution package, one version for hooks and CI) over staged changes, the pushed range and the pull request range | hooks, `lint` |
@@ -175,9 +175,10 @@ scripts.
 **Trusted checkers.** A pull request must not be judged by checkers it can edit. `lint` and `commit-policy` check out
 the commit under test into `candidate/` and the trusted commit into `trusted/` (the pull request's base SHA; on `main`,
 the same commit), both with `persist-credentials: false`, and run `trusted/scripts/` with `candidate/` as the working
-directory. A change to a checker therefore applies from the next pull request on. **Bootstrap:** when the base commit
-has no checkers and is the repository's root commit, which only the pull request adding the checkers can meet, the
-pull request's own checkers run and the job summary says so; any other base without checkers fails the job. Workflow
+directory. A change to a checker therefore applies from the next pull request on. **Bootstrap exception (one-time,
+reviewed by the owner):** when the trusted commit has no checkers and the pull request's base SHA equals the
+repository's first commit (`bbf2d44…`, pinned as `BOOTSTRAP_BASE` in both workflows), the pull request's own checkers
+run and the job summary says so; any other base without checkers, including any other root commit, fails the job. Workflow
 files run from the pull request's head and are protected instead by who can change them: agent credentials have no
 Workflows permission, and a fork pull request that changes `.github/workflows/` fails the owner gate.
 

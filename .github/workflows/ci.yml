@@ -64,6 +64,9 @@ jobs:
           PR_HEAD: ${{ github.event.pull_request.head.sha }}
           PUSH_BEFORE: ${{ github.event.before }}
           PUSH_AFTER: ${{ github.event.after }}
+          # The repository's first commit, which predates the checkers: the one-time bootstrap exception
+          # (docs/dev/agent-workflow.md, "Trusted policy checks").
+          BOOTSTRAP_BASE: bbf2d44a2dd1d52b39978199d4139c4e2ca8f224
         run: |
           git config --global --add safe.directory "$GITHUB_WORKSPACE/candidate"
           git config --global --add safe.directory "$GITHUB_WORKSPACE/trusted"
@@ -84,11 +87,13 @@ jobs:
           fi
           if [ -f "$GITHUB_WORKSPACE/trusted/scripts/check-all.sh" ]; then
             checkers=$GITHUB_WORKSPACE/trusted/scripts
-          elif [ "$EVENT_NAME" = pull_request ] && ! git rev-parse -q --verify "$PR_BASE^" >/dev/null; then
-            # Bootstrap: the base is the repository's first commit, which predates the checkers, so only the pull
-            # request that adds them can meet this condition.
+          elif [ "$EVENT_NAME" = pull_request ] && [ "$PR_BASE" = "$BOOTSTRAP_BASE" ]; then
+            # One-time bootstrap exception, reviewed by the owner: the pull request that adds the checkers to the
+            # repository's first commit is judged by its own. Any other base without checkers fails.
             checkers=$GITHUB_WORKSPACE/candidate/scripts
-            echo "Bootstrap: the base commit has no checkers; this pull request's own checkers ran." >>"$GITHUB_STEP_SUMMARY"
+            echo "Bootstrap exception: the base is the repository's first commit ($BOOTSTRAP_BASE), which has no" \
+              "checkers, so this pull request's own checkers ran. The owner reviews them before approving the gate." \
+              >>"$GITHUB_STEP_SUMMARY"
           else
             echo "The trusted commit has no scripts/check-all.sh" >&2
             exit 1

@@ -158,9 +158,12 @@ for that.
   checks the current directory, which is what makes this work. On `main` (push and schedule) both are the same commit.
 - A change to a checker therefore takes effect for the pull requests after it merges; the pull request that makes it is
   judged by the checker it replaces.
-- **Bootstrap.** The repository's first commit predates the checkers. A pull request whose base is that root commit and
-  has no checkers is judged by its own, and the job summary says so. Only the pull request that adds the checkers can
-  meet that condition; any other base without checkers fails the job.
+- **Bootstrap: a one-time, reviewed exception.** The repository's first commit, `bbf2d44`, predates the checkers, so
+  the pull request that adds them has no trusted checkers to be judged by. Both workflows pin that commit's full SHA:
+  only a pull request whose base is exactly `bbf2d44` runs its own checkers, and its job summary says so. The
+  maintainer reviews those checkers line by line before approving the gate of any pull request that runs under the
+  exception; only the scaffold pull request is expected to. Any other base without checkers, including any other root
+  commit, fails the job.
 - The build and test jobs run the pull request's own CMake files and tests, because those are what they test. They hold
   no secrets and no write token; a weakened test shows in the diff, which the maintainer reads before approving the
   gate.

@@ -43,6 +43,10 @@ jobs:
       - name: Resolve the commit range and the checkers
         id: setup
         working-directory: candidate
+        env:
+          # The repository's first commit, which predates the checkers: the one-time bootstrap exception
+          # (docs/dev/agent-workflow.md, "Trusted policy checks").
+          BOOTSTRAP_BASE: bbf2d44a2dd1d52b39978199d4139c4e2ca8f224
         run: |
           # Fail closed: both ends must exist in the full history.
           if [ -z "$BASE_SHA" ] || [ -z "$HEAD_SHA" ] ||
@@ -52,11 +56,13 @@ jobs:
           fi
           if [ -f "$GITHUB_WORKSPACE/trusted/scripts/check-commit-message.sh" ]; then
             checkers=$GITHUB_WORKSPACE/trusted/scripts
-          elif ! git rev-parse -q --verify "$BASE_SHA^" >/dev/null; then
-            # Bootstrap: the base is the repository's first commit, which predates the checkers, so only the pull
-            # request that adds them can meet this condition.
+          elif [ "$BASE_SHA" = "$BOOTSTRAP_BASE" ]; then
+            # One-time bootstrap exception, reviewed by the owner: the pull request that adds the checkers to the
+            # repository's first commit is judged by its own. Any other base without checkers fails.
             checkers=$GITHUB_WORKSPACE/candidate/scripts
-            echo "Bootstrap: the base commit has no checkers; this pull request's own checkers ran." >>"$GITHUB_STEP_SUMMARY"
+            echo "Bootstrap exception: the base is the repository's first commit ($BOOTSTRAP_BASE), which has no" \
+              "checkers, so this pull request's own checkers ran. The owner reviews them before approving the gate." \
+              >>"$GITHUB_STEP_SUMMARY"
           else
             echo "The base commit has no scripts/check-commit-message.sh" >&2
             exit 1

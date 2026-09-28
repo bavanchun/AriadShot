@@ -131,8 +131,9 @@ scripts, presets and workflows themselves.
   gate's workflow file only; the maintainer's setup script creates it and the verification script checks it.
 - **Trusted policy checks.** The `lint` and `commit-policy` checks run on `pull_request` without secrets, check out
   the pull request as data next to its base commit, and run the base commit's checkers against it, so a pull request
-  cannot weaken the checks that judge it. Only the pull request that adds the checkers to the repository's first commit
-  is judged by its own, and its job summary says so. Workflow files are protected by who can change them instead:
+  cannot weaken the checks that judge it. One reviewed exception, pinned by SHA in both workflows: the pull request
+  whose base is exactly the repository's first commit, which predates the checkers, is judged by its own checkers, and
+  its job summary says so; any other base without checkers fails. Workflow files are protected by who can change them instead:
   agents cannot push them, and fork changes to them fail the gate. The details are in
   [`docs/dev/agent-workflow.md`](../dev/agent-workflow.md#trusted-policy-checks).
 - **Rulesets without bypass actors:** on `main`, deletion and force pushes are blocked, history is linear, a pull request
