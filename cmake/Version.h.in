@@ -1,0 +1,15 @@
+// SPDX-FileCopyrightText: 2026 The AriadShot Authors
+// SPDX-License-Identifier: GPL-3.0-only
+//
+// Generated at build time by cmake/AriadShotVersion.cmake. Do not edit.
+
+#pragma once
+
+namespace ariadshot::core::generated {
+
+inline constexpr char kProjectVersion[] = "@ARIADSHOT_PROJECT_VERSION@";
+inline constexpr char kVersion[] = "@ARIADSHOT_VERSION_STRING@";
+inline constexpr char kGitDescription[] = "@ARIADSHOT_GIT_DESCRIPTION@";
+inline constexpr char kBuildType[] = "@ARIADSHOT_BUILD_TYPE@";
+
+} // namespace ariadshot::core::generated
