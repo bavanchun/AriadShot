@@ -14,8 +14,9 @@
 # permissions and the read-only MacShot tree (docs/dev/agent-workflow.md).
 #
 # Commands are split on shell separators (; && || | & newlines, $( and backticks, parentheses) and each segment is
-# read word by word; quotes are dropped and $NAME / ${NAME} are expanded from this process's environment, never
-# evaluated. Relative paths resolve against --cwd, which "cd DIR" segments and "git -C DIR" update.
+# read word by word; quotes are dropped and $NAME / ${NAME} are expanded from assignments earlier in the command, else
+# from this process's environment, never evaluated. An unknown variable expands to nothing, so "rm -rf $UNSET/" is
+# judged as "rm -rf /". Relative paths resolve against --cwd, which "cd DIR" segments and "git -C DIR" update.
 
 set -uo pipefail
 
@@ -83,7 +84,7 @@ resolve_path() {
 
 # True when $1 equals $2 or lies inside it.
 is_within() {
-    [ "$1" = "$2" ] || [[ $1 == "$2"/* ]]
+    [ "$2" = / ] || [ "$1" = "$2" ] || [[ $1 == "$2"/* ]]
 }
 
 macshot_dir=""
@@ -91,17 +92,35 @@ if [ -n "${ARIADSHOT_MACSHOT_DIR:-}" ]; then
     macshot_dir=$(resolve_path / "$ARIADSHOT_MACSHOT_DIR")
 fi
 
-# Expands $NAME and ${NAME} from the environment and removes quotes; nothing is evaluated.
+# Variables assigned earlier in the same command text ("DIR=/tmp/x; rm -rf $DIR"), by name.
+declare -A assigned=()
+
+# Expands $NAME and ${NAME} (from earlier assignments in the command, else from the environment) and removes quotes;
+# nothing is evaluated.
 expand_word() {
-    local word=$1 name value
+    local word=$1 name value rounds=0
     word=${word//\"/}
     word=${word//\'/}
     while [[ $word =~ \$\{([A-Za-z_][A-Za-z0-9_]*)\} || $word =~ \$([A-Za-z_][A-Za-z0-9_]*) ]]; do
         name=${BASH_REMATCH[1]}
-        value=${!name-}
+        if [ -n "${assigned[$name]+set}" ]; then
+            value=${assigned[$name]}
+        else
+            value=${!name-}
+        fi
         word=${word/"${BASH_REMATCH[0]}"/$value}
+        rounds=$((rounds + 1))
+        [ "$rounds" -lt 32 ] || break
     done
     printf '%s' "$word"
+}
+
+# Records NAME=value words.
+record_assignments() {
+    local word
+    for word in "$@"; do
+        [[ $word =~ ^[A-Za-z_][A-Za-z0-9_]*= ]] && assigned[${word%%=*}]=${word#*=}
+    done
 }
 
 # ---- File paths (edit tools) -------------------------------------------------------------------------------------
@@ -377,10 +396,10 @@ check_segment() {
     for word in "${raw[@]}"; do
         words+=("$(expand_word "$word")")
     done
-    # Skip environment assignments and command wrappers.
+    # Skip environment assignments (remembering them) and command wrappers.
     while [ ${#words[@]} -gt 0 ]; do
         case "${words[0]}" in
-            [A-Za-z_]*=*) words=("${words[@]:1}") ;;
+            [A-Za-z_]*=*) record_assignments "${words[0]}"; words=("${words[@]:1}") ;;
             env | command | exec | nohup | time | builtin | sudo | doas) words=("${words[@]:1}") ;;
             -*) [ ${#words[@]} -gt 0 ] && words=("${words[@]:1}") ;;
             *) break ;;
@@ -389,6 +408,7 @@ check_segment() {
     [ ${#words[@]} -gt 0 ] || return 0
     local program=${words[0]##*/}
     case "$program" in
+        export | declare | typeset | local | readonly) record_assignments "${words[@]:1}" ;;
         cd)
             if [ ${#words[@]} -gt 1 ]; then
                 cwd=$(resolve_path "$cwd" "${words[1]}")

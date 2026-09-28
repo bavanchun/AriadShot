@@ -50,6 +50,10 @@ rm-repository-root-glob	Bash/run_command	@WORK@	-	deny:rm-protected	rm -rf *
 rm-repository-root-relative	Bash/run_command	@WORK@/src	-	deny:rm-protected	rm -rf ..
 rm-git-directory	Bash/run_command	@WORK@	-	deny:rm-protected	rm -rf .git
 rm-build-directory	Bash/run_command	@WORK@	-	allow	rm -rf build
+rm-variable-assigned-in-command	Bash/run_command	@WORK@	-	allow	SCRATCH=@TMP@/scratch; rm -rf $SCRATCH
+rm-variable-assigned-to-repository	Bash/run_command	@WORK@	-	deny:rm-protected	TARGET=.; rm -rf $TARGET
+rm-exported-variable	Bash/run_command	@WORK@	-	deny:rm-protected	export TARGET=@MACSHOT@ && rm -rf "$TARGET"
+rm-unset-variable-is-root	Bash/run_command	@WORK@	-	deny:rm-protected	rm -rf $ARIADSHOT_GUARD_TEST_UNSET/
 gh-pr-merge	Bash/run_command	@WORK@	-	deny:gh-merge	gh pr merge 12 --squash
 gh-pr-view	Bash/run_command	@WORK@	-	allow	gh pr view 12
 gh-pr-checks	Bash/run_command	@WORK@	-	allow	gh pr checks 12
