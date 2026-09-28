@@ -138,7 +138,7 @@ All options come from the interface target `AriadShot::options` in `cmake/AriadS
 | Scope of analysis | tracked translation units under `src/` and `tests/` (`git ls-files`), header filter on the source tree, so generated MOC output is never analysed | `linux-clang` |
 | Module boundaries | `scripts/check-architecture.sh` and the configure-time link check ([02 §2](02-modules-and-interfaces.md)) | pre-commit hook, `lint`, every configure |
 | Network-free build | `scripts/check-no-network-build.sh` | `lint` |
-| Repository hygiene | `scripts/check-repo.sh`: no private paths, no `CLAUDE.md`, `CLAUDE.local.md`, `.claude/CLAUDE.md` or `GEMINI.md` (tracked or untracked), every nested `AGENTS.md` listed in the root file | pre-commit hook, `lint` |
+| Repository hygiene | `scripts/check-repo.sh`: no private paths in the published content (the index in the pre-commit hook, the commit's tree in `lint`), no `CLAUDE.md`, `CLAUDE.local.md`, `.claude/CLAUDE.md` or `GEMINI.md` (tracked or untracked), every nested `AGENTS.md` listed in the root file, the owner gate embedding the current `scripts/github/gate-inspect.sh` | pre-commit hook, `lint` |
 | Shell and workflows | `shellcheck`, `actionlint` | `lint` |
 | Licence headers | `reuse lint` | `lint` |
 | Secrets | `gitleaks` (distribution package, one version for hooks and CI) over staged changes, the pushed range and the pull request range | hooks, `lint` |
@@ -146,8 +146,10 @@ All options come from the interface target `AriadShot::options` in `cmake/AriadS
 | Pull request size | `scripts/check-pr-size.sh`: 500 changed lines, excluding goldens, generated ledger lines, `third_party/` and generated protocol code; `size/exception` label set by the owner | `commit-policy` |
 | DCO | `scripts/check-dco.sh`: `Signed-off-by` required on every commit by an external contributor; owner-account and Dependabot pull requests are exempt; the trailers are printed for the owner to copy into the squash commit body | `commit-policy` |
 
-`scripts/check-all.sh` runs every local check in CI order. Git hooks live in `.githooks/` and call the same scripts
-(activated once per clone by `scripts/setup-dev.sh`); there is no pre-commit framework and no Node toolchain.
+`scripts/check-all.sh` runs every local check in CI order, using the checkers and `.gitleaks.toml` of its own
+directory on the repository in the current directory (§6.1, "Trusted checkers"). Git hooks live in `.githooks/` and
+call the same scripts (activated once per clone by `scripts/setup-dev.sh`); there is no pre-commit framework and no
+Node toolchain.
 
 ## 6. Continuous integration
 
@@ -157,7 +159,7 @@ All options come from the interface target `AriadShot::options` in `cmake/AriadS
 | :--- | :--- | :--- |
 | `ci.yml` | `pull_request`; `push` to `main`; weekly schedule on `main` | build and test matrix, lint |
 | `pr-policy.yml` | `pull_request` (opened, synchronize, edited, labeled, unlabeled) | the `commit-policy` job |
-| `owner-gate.yml` | `pull_request_target` (opened, synchronize, reopened, ready_for_review), so the definition on `main` always runs, never a pull request's copy | jobs `inspect` (fails closed: a fork pull request that changes `.github/workflows/` gets `owner-consent` = failure) and `owner-approval` (bound to the `owner-review` environment; after the owner's approval it creates the check run `owner-consent` = success on the head SHA); `permissions: {pull-requests: read, checks: write}`; no checkout, no repository code, no secrets |
+| `owner-gate.yml` | `pull_request_target` (opened, synchronize, reopened, ready_for_review), so the definition on `main` always runs, never a pull request's copy | jobs `inspect` (fails closed: a fork pull request that changes `.github/workflows/` gets `owner-consent` = failure) and `owner-approval` (bound to the `owner-review` environment; after the owner's approval it creates the check run `owner-consent` = success on the head SHA); `permissions: {pull-requests: read, checks: write}`; no checkout, no repository code, no secrets; allowed to run by the repository's Actions event policy (§6.3) |
 | `macos-vm.yml` | `workflow_dispatch`; schedule on `main` | the macOS 14 VM self-hosted runner (from G7), environment `owner-mac`; never `pull_request` or `pull_request_target` |
 | release workflows (M5) | tags, manual | artifact builds without restored caches, in environments that require the owner's approval |
 
@@ -169,6 +171,15 @@ request jobs; every action pinned by commit SHA; `concurrency` cancels supersede
 (pull request base and head SHAs, or `before` and `after` on push), verify both commits exist and **fail closed** if
 the range cannot be resolved. Pull request titles and bodies are passed through `env:`, never interpolated into
 scripts.
+
+**Trusted checkers.** A pull request must not be judged by checkers it can edit. `lint` and `commit-policy` check out
+the commit under test into `candidate/` and the trusted commit into `trusted/` (the pull request's base SHA; on `main`,
+the same commit), both with `persist-credentials: false`, and run `trusted/scripts/` with `candidate/` as the working
+directory. A change to a checker therefore applies from the next pull request on. **Bootstrap:** when the base commit
+has no checkers and is the repository's root commit, which only the pull request adding the checkers can meet, the
+pull request's own checkers run and the job summary says so; any other base without checkers fails the job. Workflow
+files run from the pull request's head and are protected instead by who can change them: agent credentials have no
+Workflows permission, and a fork pull request that changes `.github/workflows/` fails the owner gate.
 
 ### 6.2 Jobs
 
@@ -199,6 +210,11 @@ Configured by the owner-run `scripts/github/setup-repository.sh`, which prints t
   GitHub Actions app, **strict** (`strict_required_status_checks_policy: true`: the branch must be up to date with `main`, so updating it starts a new gate run and needs a new owner approval, and the approved head always contains the current `main`), **no bypass actors**. No signed-commit rule and no code-owner rule.
 - **`release-tags` ruleset** on `refs/tags/v*`: creation, update and deletion restricted, no bypass actors. Tags are
   created only by the owner-run `scripts/github/release-tag.sh` (§9).
+- **Actions event policy** `owner-gate-pull-request-target`: applies to `.github/workflows/owner-gate.yml` only and
+  allows only `pull_request_target`. GitHub blocks that event in public repositories by default from 2026-11-02, and
+  this policy is what lets the owner gate keep running; `scripts/github/verify-identity.sh owner` checks it. If GitHub
+  offers no such policy for the repository, the owner merges every pull request personally until the gate is
+  redesigned.
 - **Owner gate**: environment `owner-review` with the owner as required reviewer, self-review allowed, administrator
   bypass disabled. Agent credentials have no permission to approve deployments, set commit statuses, rerun workflows,
   edit workflows or change settings, so no pull request merges before the owner approved its exact head commit. What

@@ -124,7 +124,17 @@ scripts, presets and workflows themselves.
   maintainer's consent comes from a required check, `owner-consent`, created on the pull request's head commit by a
   `pull_request_target` workflow that waits on the `owner-review` environment, which only the maintainer can approve.
   The agent token cannot approve it, fake it, rerun it or edit it. Required checks are strict, so a head behind `main`
-  cannot merge and updating it needs a new approval. A fork pull request that changes workflows fails the gate.
+  cannot merge and updating it needs a new approval. A fork pull request that changes workflows fails the gate. The
+  gate uses `pull_request_target` the way GitHub documents as safe: it checks out and runs none of the pull request's
+  code, and its token only reads pull requests and writes check runs. Because GitHub blocks that event in public
+  repositories by default from 2026-11-02, a repository Actions event policy permits `pull_request_target` for the
+  gate's workflow file only; the maintainer's setup script creates it and the verification script checks it.
+- **Trusted policy checks.** The `lint` and `commit-policy` checks run on `pull_request` without secrets, check out
+  the pull request as data next to its base commit, and run the base commit's checkers against it, so a pull request
+  cannot weaken the checks that judge it. Only the pull request that adds the checkers to the repository's first commit
+  is judged by its own, and its job summary says so. Workflow files are protected by who can change them instead:
+  agents cannot push them, and fork changes to them fail the gate. The details are in
+  [`docs/dev/agent-workflow.md`](../dev/agent-workflow.md#trusted-policy-checks).
 - **Rulesets without bypass actors:** on `main`, deletion and force pushes are blocked, history is linear, a pull request
   with resolved conversations and squash-only merging is required, and so are the CI checks and `owner-consent`, each
   pinned to the GitHub Actions app. On `refs/tags/v*`, creation, update and deletion are restricted; the maintainer's
@@ -201,6 +211,9 @@ recipe and a desktop entry).
   residual risk after approval is timing, not content. When `main` moves, open pull requests need an update and a
   second approval.
 - Workflow changes can only be pushed by the maintainer, because the agent token has no Workflows permission.
+- A change to a policy checker is judged by the checker it replaces and applies from the next pull request on.
+- The owner gate depends on the event policy. If GitHub does not allow one for this repository, the gate cannot run
+  after 2026-11-02; the maintainer then merges every pull request personally until the gate is redesigned.
 - Blank squash bodies keep commit history free of plan identifiers and checklists; the detail stays in the pull request,
   linked from every commit title.
 - The single-file instruction topology depends on how each agent runtime loads files; the loading behaviour is
