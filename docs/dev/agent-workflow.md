@@ -40,8 +40,8 @@ issue or plan phase → task packet → worktree → implement (tests first) →
    references, evidence, risks) and carries no AI attribution.
 4. **Review.** A reviewer of another model family reads the diff and the cited MacShot lines, spot-checking at least
    five non-trivial values. `FAIL` or a blocking finding returns the work to the implementer in the same worktree.
-5. **Maintainer.** Reads the pull request, approves the `owner-approval` deployment (or asks for changes) and merges
-   with squash. Live-session or Mac evidence, when needed, is attached before approval.
+5. **Maintainer.** Reads the pull request, approves the gate's deployment to the `owner-review` environment (or asks
+   for changes) and merges with squash. Live-session or Mac evidence, when needed, is attached before approval.
 6. **Close.** The manager checks the post-merge run on `main`, updates the parity status, removes the worktree and
    closes the issue.
 
@@ -112,6 +112,14 @@ success on the pull request's head commit. Every push starts a new run that wait
 `owner-consent` and the CI checks, all strict, so a head behind `main` cannot merge and updating it needs a new
 approval.
 
+The gate follows GitHub's rule for `pull_request_target`: the workflow never checks out, builds or runs the pull
+request's code, and its token can only read pull requests and write check runs. From 2026-11-02 GitHub blocks
+`pull_request_target` in public repositories unless an Actions event policy permits it. `setup-repository.sh` therefore
+creates the repository policy `owner-gate-pull-request-target`, which applies only to
+`.github/workflows/owner-gate.yml` and permits only `pull_request_target`, and `verify-identity.sh owner` checks it. The
+maintainer runs both before that date. If the policy cannot be created for this repository, the gate cannot run, and
+the fallback below applies until the gate is redesigned.
+
 | Action with the agent token | GitHub | Also covered by |
 | :--- | :--- | :--- |
 | Push to, force-push or delete `main` | **blocked** (ruleset without bypass) | agent guard, pre-push hook |
@@ -123,12 +131,45 @@ approval.
 | Merge a pull request after the maintainer approved its gate and CI is green | **allowed** (merging needs only Contents write) | agent guard denies `gh pr merge` and the merge API; rule "agents never merge" |
 | Create or edit a release on an existing tag | **allowed** | agent guard denies `gh release` and the releases API; rule |
 | Close or reopen pull requests and issues, labels, comments, delete other branches | **allowed** | rule: agents act only on their own pull requests and branches |
-| Anything done with the maintainer's full login, SSH key or logged-in browser | **not distinguishable** from the maintainer | those credentials are absent from agent panes; Claude Code's project settings deny the browser-automation tools; rule |
+| Anything done with the maintainer's full login, SSH key or logged-in browser | **not distinguishable** from the maintainer | those credentials are absent from agent panes; `.claude/settings.json` denies Claude Code the browser and desktop automation tools (below); rule |
 
 So consent is enforced by the server up to the maintainer's approval of a commit; after it, "the maintainer merges" is
 a rule backed by the guard. Because the approval binds the head commit, which already contains the current `main`, an
 early merge by an agent can only merge exactly what was approved. If the gate ever behaves differently from this
 description, the maintainer merges every pull request personally and this page is updated.
+
+**Browser and desktop automation.** `.claude/settings.json` denies Claude Code the MCP servers `claude-in-chrome`,
+`chrome-devtools`, `playwright`, `puppeteer` and `computer-use`, and the commands `agent-browser`, `chrome-profile`,
+`terminal-browser` and `orca computer`: the tools that can drive a logged-in browser or the desktop. The list matches
+names, so a tool installed under another name is covered only by the rule until it is added; Codex and agy rely on the
+rule.
+
+## Trusted policy checks
+
+The checks that decide whether a pull request may merge are scripts in this repository, so a pull request could weaken
+the checks that judge it, for example by making `scripts/check-commit-message.sh` accept anything. CI follows GitHub's
+guidance for untrusted input: the pull request is data, and only trusted code judges it. No elevated trigger is needed
+for that.
+
+- The `lint` job (`ci.yml`) and the `commit-policy` job (`pr-policy.yml`) run on `pull_request` with a read-only
+  token and no secrets. Each checks out the pull request into `candidate/` and the pull request's base commit into
+  `trusted/`, both without persisted credentials, and runs the checkers from `trusted/scripts/` with `candidate/` as
+  the working directory. `scripts/check-all.sh` takes its checkers and `.gitleaks.toml` from its own directory and
+  checks the current directory, which is what makes this work. On `main` (push and schedule) both are the same commit.
+- A change to a checker therefore takes effect for the pull requests after it merges; the pull request that makes it is
+  judged by the checker it replaces.
+- **Bootstrap.** The repository's first commit predates the checkers. A pull request whose base is that root commit and
+  has no checkers is judged by its own, and the job summary says so. Only the pull request that adds the checkers can
+  meet that condition; any other base without checkers fails the job.
+- The build and test jobs run the pull request's own CMake files and tests, because those are what they test. They hold
+  no secrets and no write token; a weakened test shows in the diff, which the maintainer reads before approving the
+  gate.
+- Workflow files cannot be judged this way, because GitHub runs a `pull_request` workflow from the pull request's head.
+  They are protected by who can change them: the agent token has no Workflows permission, a fork pull request that
+  changes `.github/workflows/` fails the owner gate, and the maintainer reviews every workflow change before approving
+  the gate.
+- Locally, the pre-commit and commit-msg hooks run the checkers of the working copy: they help the author and judge
+  nothing.
 
 ## The agent guard
 
@@ -159,13 +200,16 @@ complete. Known exceptions:
   CLAUDE.md-only mode. Such files are forbidden here, including when a documentation or folder-context skill offers to
   create one, and `check-repo.sh` rejects them, tracked or not.
 - Claude Code's Explore and Plan subagents skip project instructions, so their scouting output is not rule-aware.
-- The first Claude Code session after an upgrade from a version older than 2.1.276 reads only `CLAUDE.md`.
+- The first Claude Code session after an upgrade from version 2.1.276 or earlier reads only `CLAUDE.md`.
 - Personal global rule files reach only the runtime they belong to, so every rule that must bind all agents is written
   into this repository's `AGENTS.md`.
 
-**Canary check after upgrading a runtime.** In a scratch repository with a root `AGENTS.md` naming a nested
-`src/render/AGENTS.md`, each file containing a unique word, start the upgraded runtime at the repository root and ask
-it for the words it knows before and after reading a file in `src/render/`. Update this section if the answer changes.
+**Canary check after upgrading a runtime.** In a scratch repository, create a root `AGENTS.md` that names a nested
+`src/render/AGENTS.md`, and a nested `src/ui/AGENTS.md` that no file names; give each file a unique word. Start the
+upgraded runtime at the repository root and ask it for the words it knows before and after reading a file in
+`src/render/` and one in `src/ui/`. The listed file shows that the root list works; the unlisted one shows what the
+runtime loads by itself. Expected: every runtime knows the root word and, once told to, the listed word; only Claude
+Code knows the unlisted word, and only after reading a file in `src/ui/`. Update this section if the answer changes.
 
 ## Reports and handoffs
 
