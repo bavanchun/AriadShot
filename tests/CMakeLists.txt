@@ -2,8 +2,9 @@
 # SPDX-License-Identifier: GPL-3.0-only
 #
 # Every test runs in a neutral environment (docs/dev/testing.md): the offscreen platform, none of the host's Qt
-# variables, no session bus, and a fresh home and XDG directory set per test under this build directory. CTest names
-# are <area>.<topic>; labels are unit, golden, wayland, nested-hyprland, live and tsan-safe.
+# variables, no session bus, no debug-information downloads, and a fresh home and XDG directory set per test under this
+# build directory. CTest names are <area>.<topic>; labels are unit, golden, wayland, nested-hyprland, live and
+# tsan-safe.
 
 set(ARIADSHOT_TEST_ROOT "${CMAKE_CURRENT_BINARY_DIR}/environment")
 
@@ -25,6 +26,7 @@ QT_AUTO_SCREEN_SCALE_FACTOR=unset:;\
 QT_ENABLE_HIGHDPI_SCALING=unset:;\
 QT_FONT_DPI=unset:;\
 DBUS_SESSION_BUS_ADDRESS=unset:;\
+DEBUGINFOD_URLS=unset:;\
 HOME=set:${root}/home;\
 XDG_CONFIG_HOME=set:${root}/config;\
 XDG_DATA_HOME=set:${root}/data;\
@@ -33,8 +35,10 @@ XDG_STATE_HOME=set:${root}/state;\
 XDG_RUNTIME_DIR=set:${root}/runtime;\
 ARIADSHOT_TEST_OUTPUT_DIR=set:${root}/output")
     if(ARIADSHOT_SANITIZE STREQUAL "thread")
+        # The system Qt and libstdc++ are not instrumented: report only races that instrumented code takes part in.
+        set(suppressions "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/sanitizers/tsan.supp")
         set_property(TEST "${name}" APPEND PROPERTY ENVIRONMENT_MODIFICATION
-            "TSAN_OPTIONS=set:suppressions=${CMAKE_CURRENT_FUNCTION_LIST_DIR}/sanitizers/tsan.supp")
+            "TSAN_OPTIONS=set:ignore_noninstrumented_modules=1:suppressions=${suppressions}")
     endif()
 endfunction()
 

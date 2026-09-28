@@ -8,9 +8,9 @@ SPDX-License-Identifier: GPL-3.0-only
 Full rules: `docs/dev/testing.md`. Strategy: `docs/spec/12-testing-strategy.md`.
 
 - **Declare tests with `ariadshot_add_test(NAME <area>.<topic> SOURCES … LIBS … LABELS …)`** in `tests/CMakeLists.txt`.
-  It gives every test the neutral environment: offscreen platform, the host's Qt variables unset, no session bus, and
-  a fresh home and XDG directory set under the build directory. Tests never touch the user's configuration, history,
-  sockets, tray, shortcuts or clipboard.
+  It gives every test the neutral environment: offscreen platform, the host's Qt variables unset, no session bus, no
+  debug-information downloads, and a fresh home and XDG directory set under the build directory. Tests never touch
+  the user's configuration, history, sockets, tray, shortcuts or clipboard.
 - **Names describe behaviour**, never ledger, deviation, gate or milestone IDs. File names: `tst_<Topic>.cpp`.
 - **Labels:** `unit`, `golden`, `wayland` (headless Sway), `nested-hyprland`, `live` (owner-approved runs) and
   `tsan-safe` (no Qt threading). The `dev` and `asan` presets exclude `wayland`, `nested-hyprland` and `live`.

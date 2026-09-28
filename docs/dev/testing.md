@@ -67,17 +67,23 @@ single functions and are added only with a reproduced report.
 
 Every test runs with `QT_QPA_PLATFORM=offscreen`; with `QT_QPA_PLATFORMTHEME`, `QT_STYLE_OVERRIDE`, `QT_IM_MODULE`,
 `QT_PLUGIN_PATH`, `QT_SCALE_FACTOR`, `QT_SCREEN_SCALE_FACTORS`, `QT_AUTO_SCREEN_SCALE_FACTOR`,
-`QT_ENABLE_HIGHDPI_SCALING`, `QT_FONT_DPI` and `DBUS_SESSION_BUS_ADDRESS` unset; and with its own `HOME`,
-`XDG_CONFIG_HOME`, `XDG_DATA_HOME`, `XDG_CACHE_HOME`, `XDG_STATE_HOME`, `XDG_RUNTIME_DIR` (mode 0700) and
+`QT_ENABLE_HIGHDPI_SCALING`, `QT_FONT_DPI`, `DBUS_SESSION_BUS_ADDRESS` and `DEBUGINFOD_URLS` unset; and with its
+own `HOME`, `XDG_CONFIG_HOME`, `XDG_DATA_HOME`, `XDG_CACHE_HOME`, `XDG_STATE_HOME`, `XDG_RUNTIME_DIR` (mode 0700) and
 `ARIADSHOT_TEST_OUTPUT_DIR` under `build/<preset>/tests/environment/<test>/`, recreated at the start of every CTest
 run. Tests that use `QStandardPaths` also call `QStandardPaths::setTestModeEnabled(true)`.
 
 The reason: a desktop platform theme such as `gtk3` loads fontconfig, Pango and GLib into the test process, which makes
 goldens host-dependent and produces leak reports under AddressSanitizer. The session bus is hidden too, because Qt
 reaches the desktop's tray over D-Bus even on the offscreen platform; libdbus falls back to `$XDG_RUNTIME_DIR/bus`, so
-both the unset `DBUS_SESSION_BUS_ADDRESS` and the private `XDG_RUNTIME_DIR` are needed. The sanitizer presets pass with such a theme
-set in the calling shell. Packaging `check()` steps unset the same variables. Bundled fonts (`QT_QPA_FONTDIR`) join the
+both the unset `DBUS_SESSION_BUS_ADDRESS` and the private `XDG_RUNTIME_DIR` are needed. `DEBUGINFOD_URLS` is unset
+so that a sanitizer report is never symbolized with debug information downloaded during the test: tests fetch
+nothing, and a report reads the same on a workstation as in CI. The sanitizer presets pass with such a theme set in
+the calling shell. Packaging `check()` steps unset the same variables. Bundled fonts (`QT_QPA_FONTDIR`) join the
 environment when they are added.
+
+Under ThreadSanitizer (`tsan`), tests run with `ignore_noninstrumented_modules=1`: the system Qt and libstdc++ are
+not instrumented, so only races that AriadShot's instrumented code takes part in are reported. The suppressions in
+`tests/sanitizers/tsan.supp` name exported symbols only.
 
 ## Golden images
 

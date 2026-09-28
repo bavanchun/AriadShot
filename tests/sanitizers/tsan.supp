@@ -3,9 +3,12 @@
 #
 # ThreadSanitizer suppressions for the tsan preset. The system Qt is not instrumented, so ThreadSanitizer cannot see
 # the synchronisation inside it. Tests labelled tsan-safe use no Qt threading of their own; the only Qt thread in them
-# is QtTest's watchdog, which QtTest starts and joins itself. Every entry names that watchdog's code path only.
+# is QtTest's watchdog, which QtTest starts and joins itself.
+#
+# Races that only uninstrumented code takes part in, such as QtTest reusing the stack memory of the watchdog's
+# condition variable after joining it, are left out by ignore_noninstrumented_modules=1 in TSAN_OPTIONS
+# (tests/CMakeLists.txt), not by entries here: without debug information those frames have no names to match, and CI
+# has none. Entries name only exported symbols, which resolve with or without debug information.
 
-# The watchdog's condition variable lives on the main thread's stack; its join happens inside Qt.
-race:QPlainTestLogger::stopLogging
 # The watchdog thread is joined inside Qt, so ThreadSanitizer reports it as leaked.
 thread:QThread::start
