@@ -5,7 +5,18 @@
   },
   "permissions": {
     "deny": [
-      "mcp__claude-in-chrome__*"
+      "mcp__claude-in-chrome__*",
+      "mcp__chrome-devtools__*",
+      "mcp__playwright__*",
+      "mcp__puppeteer__*",
+      "mcp__computer-use__*",
+      "Bash(agent-browser:*)",
+      "Bash(npx agent-browser:*)",
+      "Bash(chrome-profile:*)",
+      "Bash(terminal-browser:*)",
+      "Bash(orca computer:*)",
+      "Bash(orca-ide computer:*)",
+      "Bash(orca-dev computer:*)"
     ]
   },
   "hooks": {
