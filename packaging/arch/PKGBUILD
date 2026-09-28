@@ -1,0 +1,50 @@
+# SPDX-FileCopyrightText: 2026 The AriadShot Authors
+# SPDX-License-Identifier: GPL-3.0-only
+#
+# Development package that tracks main. Builds against the system Qt; check() runs the offscreen test suite with the
+# desktop's Qt platform theme and style unset, so the host environment cannot change the results.
+
+pkgname=ariadshot-git
+pkgver=0.0.0
+pkgrel=1
+pkgdesc='Screenshot, annotation and screen recording tool that remakes MacShot for Linux (development version)'
+arch=('x86_64' 'aarch64')
+url='https://github.com/bavanchun/AriadShot'
+license=('GPL-3.0-only')
+depends=('qt6-base')
+makedepends=('cmake' 'ninja' 'git')
+checkdepends=('jq')
+provides=('ariadshot')
+conflicts=('ariadshot')
+source=("${pkgname%-git}::git+https://github.com/bavanchun/AriadShot.git")
+sha256sums=('SKIP')
+
+pkgver() {
+    cd "${pkgname%-git}" || return
+    if git describe --long --tags --match 'v[0-9]*' >/dev/null 2>&1; then
+        git describe --long --tags --match 'v[0-9]*' | sed 's/^v//;s/\([^-]*-g\)/r\1/;s/-/./g'
+    else
+        # Before the first release tag: project(VERSION), the commit count and the commit.
+        printf '%s.r%s.g%s' \
+            "$(sed -nE 's/^project\(AriadShot VERSION ([0-9.]+).*/\1/p' CMakeLists.txt)" \
+            "$(git rev-list --count HEAD)" "$(git rev-parse --short=7 HEAD)"
+    fi
+}
+
+build() {
+    cmake -S "${pkgname%-git}" -B build -G Ninja \
+        -DCMAKE_BUILD_TYPE=None \
+        -DCMAKE_INSTALL_PREFIX=/usr \
+        -DBUILD_TESTING=ON \
+        -Wno-dev
+    cmake --build build
+}
+
+check() {
+    env -u QT_QPA_PLATFORMTHEME -u QT_STYLE_OVERRIDE \
+        ctest --test-dir build --output-on-failure --label-exclude '^(wayland|nested-hyprland|live)$'
+}
+
+package() {
+    DESTDIR="$pkgdir" cmake --install build
+}
