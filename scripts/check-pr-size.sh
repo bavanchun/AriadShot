@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: 2026 The AriadShot Authors
 # SPDX-License-Identifier: GPL-3.0-only
 #
-# Pull requests change at most 500 lines, not counting regression goldens (tests/golden/), generated parity ledger
+# Pull requests change at most 500 lines, not counting golden images (tests/golden/), generated parity ledger
 # files (parity/ledger/<family>.jsonl; hand-written manual-*.jsonl files count), vendored code (third_party/) and
 # generated code (any generated/ directory). A larger pull request needs the size/exception label, which the owner
 # applies.
@@ -13,7 +13,7 @@
 set -uo pipefail
 
 readonly LIMIT=500
-readonly EXCLUDED='^(tests/golden/|third_party/|parity/ledger/[a-z]+\.jsonl$)|(^|/)generated/'
+readonly EXCLUDED='^(tests/golden/.+\.(png|jpg|jpeg|webp)$|third_party/|parity/ledger/[a-z]+\.jsonl$)|(^|/)generated/'
 
 range=""
 labels='[]'
