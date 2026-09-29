@@ -93,13 +93,15 @@ fast subset on every commit and push.
 | :--- | :--- | :--- |
 | `lint` | Arch Linux container | `scripts/check-all.sh --lint-only` over the pull request's commit range, taken from the base commit |
 | `commit-policy` | Ubuntu | pull request title and body, commit messages, pull request size, DCO, with the base commit's checkers |
-| `linux-gcc` | Arch Linux container | `cmake --workflow --preset ci-dev` |
-| `linux-clang` | Arch Linux container | `ci-asan` and `ci-tsan` workflows, then clang-tidy and clazy on tracked sources |
-| `linux-qt-floor` | Ubuntu 24.04, GCC 13, Qt 6.8.3 | `cmake --workflow --preset ci-dev` |
+| `linux-gcc` | Arch Linux container with the Wayland and media packages | `cmake --workflow --preset ci-dev`, then the `wayland` tier with CTest |
+| `linux-clang` | Arch Linux container with the Wayland and media packages | `ci-asan` and `ci-tsan` workflows, then clang-tidy and clazy on tracked sources |
+| `linux-qt-floor` | Ubuntu 24.04, GCC 13, Qt 6.8.3, FFmpeg/VA/DRM/PipeWire/GBM/Wayland development packages | `cmake --workflow --preset ci-dev` |
 | `macos` | macOS 26, Qt 6.8.3 | `cmake --workflow --preset ci-dev` |
 | `macos-14` | macOS 14, Qt 6.8.3 | `cmake --workflow --preset ci-dev` (until GitHub retires the image) |
 
-Each build job writes the Qt, compiler and CMake versions it used to the job summary. `lint` and `commit-policy` run
+Each build job uploads `build/*/tests/environment/*/output/**` after a failure. The artifact includes failure details
+and golden candidates, is retained for three days, and is skipped when no output exists. Each build job writes the Qt,
+compiler and CMake versions it used to the job summary. `lint` and `commit-policy` run
 the checkers of the pull request's base commit, so a change to a checker applies from the next pull request on
 ([Trusted policy checks](agent-workflow.md#trusted-policy-checks)). To run a checker version against your branch
 yourself, call it from another checkout: `/path/to/other/scripts/check-all.sh` checks the current directory.

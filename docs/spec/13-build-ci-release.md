@@ -193,12 +193,16 @@ The job names below are the required status checks; `owner-consent` is a check r
 | :--- | :--- | :--- |
 | `lint` | Ubuntu 24.04 with an `archlinux:base-devel` container | formatting, architecture, network-free build, repository hygiene, shellcheck, actionlint, `reuse lint`, gitleaks on the range |
 | `commit-policy` | Ubuntu 24.04 | pull request title and body, every commit in the range, pull request size, DCO |
-| `linux-gcc` | Arch container | `cmake --workflow --preset ci-dev` (GCC, Qt from Arch); tier 2 joins once proven ([12 §2](12-testing-strategy.md)) |
-| `linux-clang` | Arch container | `ci-asan` and `ci-tsan` workflows, clang-tidy and clazy on the tracked file list |
-| `linux-qt-floor` | Ubuntu 24.04 | GCC 13 and pinned Qt 6.8.3, `ci-dev` workflow, expected-Qt check |
+| `linux-gcc` | Arch container | installs the Wayland and media package sets; `ci-dev` workflow, then `ctest --test-dir build/ci-dev -L '^wayland$' --output-on-failure --no-tests=ignore` with a private runtime directory |
+| `linux-clang` | Arch container | installs the Wayland and media package sets; `ci-asan` and `ci-tsan` workflows, clang-tidy and clazy on the tracked file list |
+| `linux-qt-floor` | Ubuntu 24.04 | GCC 13, pinned Qt 6.8.3 modules (`qtshadertools`, `qtdeclarative`, `qtwayland`) and FFmpeg, VA, DRM, PipeWire, GBM and Wayland development packages; `ci-dev` workflow, expected-Qt check |
 | `macos` | `macos-26` (arm64) | pinned Qt 6.8.3, `ci-dev` workflow, deployment target 14.0, expected-Qt check |
 | `macos-14` | `macos-14` (arm64) | as `macos`; the only per-pull-request check of the macOS 14 runtime. Required until GitHub retires the image on 2026-11-02; then the scheduled VM run replaces it and the parity report marks per-pull-request macOS 14 coverage as ended |
 | `owner-consent` | Ubuntu 24.04 | check run created on the pull request's head SHA by `owner-gate.yml` (§6.1) after the owner approves the `owner-review` environment for that commit |
+
+On failure, each build job uploads `build/*/tests/environment/*/output/**` with the SHA-pinned `actions/upload-artifact`
+action. Artifacts contain test failure details and golden candidates, are retained for three days, and are skipped when
+the output path is absent.
 
 **Caching.** `ccache` per job keyed by job, compiler and a hash of the CMake files and presets (`CCACHE_BASEDIR` at the
 checkout root), the pacman package cache in the container, and `install-qt-action`'s own cache. Caches are untrusted
