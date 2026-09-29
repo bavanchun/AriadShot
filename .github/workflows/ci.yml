@@ -126,7 +126,7 @@ jobs:
       CMAKE_CXX_COMPILER_LAUNCHER: ccache
     steps:
       - name: Install packages
-        run: pacman -Syu --noconfirm --needed git cmake ninja qt6-base jq ccache sway wayland-utils layer-shell-qt qt6-declarative qt6-wayland qt6-shadertools ffmpeg libva libdrm pipewire mesa vulkan-headers vulkan-icd-loader vulkan-swrast gpac
+        run: pacman -Syu --noconfirm --needed git cmake ninja qt6-base jq ccache sway wayland-utils layer-shell-qt qt6-declarative qt6-wayland qt6-shadertools ffmpeg libva libdrm pipewire mesa vulkan-headers vulkan-validation-layers vulkan-icd-loader vulkan-swrast gpac
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
@@ -144,12 +144,7 @@ jobs:
       - name: Build and test
         run: cmake --workflow --preset ci-dev
       - name: Wayland tier-2 tests
-        env:
-          XDG_RUNTIME_DIR: ${{ runner.temp }}/ariadshot-runtime
-        run: |
-          mkdir -p "$XDG_RUNTIME_DIR"
-          chmod 700 "$XDG_RUNTIME_DIR"
-          ctest --test-dir build/ci-dev -L '^wayland$' --output-on-failure --no-tests=ignore
+        run: ctest --test-dir build/ci-dev -L '^wayland$' --output-on-failure --no-tests=ignore
       - name: Upload test failure artifacts
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -168,7 +163,7 @@ jobs:
       CMAKE_CXX_COMPILER_LAUNCHER: ccache
     steps:
       - name: Install packages
-        run: pacman -Syu --noconfirm --needed git cmake ninja qt6-base jq ccache clang clazy sway wayland-utils layer-shell-qt qt6-declarative qt6-wayland qt6-shadertools ffmpeg libva libdrm pipewire mesa vulkan-headers vulkan-icd-loader vulkan-swrast gpac
+        run: pacman -Syu --noconfirm --needed git cmake ninja qt6-base jq ccache clang clazy sway wayland-utils layer-shell-qt qt6-declarative qt6-wayland qt6-shadertools ffmpeg libva libdrm pipewire mesa vulkan-headers vulkan-validation-layers vulkan-icd-loader vulkan-swrast gpac
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
@@ -226,7 +221,7 @@ jobs:
           host: linux
           target: desktop
           arch: linux_gcc_64
-          modules: qtshadertools qtdeclarative qtwayland
+          modules: qtshadertools
           cache: true
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:

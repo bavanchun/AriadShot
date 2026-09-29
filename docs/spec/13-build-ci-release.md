@@ -193,9 +193,9 @@ The job names below are the required status checks; `owner-consent` is a check r
 | :--- | :--- | :--- |
 | `lint` | Ubuntu 24.04 with an `archlinux:base-devel` container | formatting, architecture, network-free build, repository hygiene, shellcheck, actionlint, `reuse lint`, gitleaks on the range |
 | `commit-policy` | Ubuntu 24.04 | pull request title and body, every commit in the range, pull request size, DCO |
-| `linux-gcc` | Arch container | installs the Wayland and media package sets; `ci-dev` workflow, then `ctest --test-dir build/ci-dev -L '^wayland$' --output-on-failure --no-tests=ignore` with a private runtime directory |
+| `linux-gcc` | Arch container | installs the Wayland and media package sets; `ci-dev` workflow, then `ctest --test-dir build/ci-dev -L '^wayland$' --output-on-failure --no-tests=ignore` with a private runtime directory supplied by the test harness |
 | `linux-clang` | Arch container | installs the Wayland and media package sets; `ci-asan` and `ci-tsan` workflows, clang-tidy and clazy on the tracked file list |
-| `linux-qt-floor` | Ubuntu 24.04 | GCC 13, pinned Qt 6.8.3 modules (`qtshadertools`, `qtdeclarative`, `qtwayland`) and FFmpeg, VA, DRM, PipeWire, GBM and Wayland development packages; `ci-dev` workflow, expected-Qt check |
+| `linux-qt-floor` | Ubuntu 24.04 | GCC 13, pinned Qt 6.8.3 base (including Qt Quick and Qt Wayland) plus the `qtshadertools` module and FFmpeg, VA, DRM, PipeWire, GBM and Wayland development packages; `ci-dev` workflow, expected-Qt check |
 | `macos` | `macos-26` (arm64) | pinned Qt 6.8.3, `ci-dev` workflow, deployment target 14.0, expected-Qt check |
 | `macos-14` | `macos-14` (arm64) | as `macos`; the only per-pull-request check of the macOS 14 runtime. Required until GitHub retires the image on 2026-11-02; then the scheduled VM run replaces it and the parity report marks per-pull-request macOS 14 coverage as ended |
 | `owner-consent` | Ubuntu 24.04 | check run created on the pull request's head SHA by `owner-gate.yml` (§6.1) after the owner approves the `owner-review` environment for that commit |
