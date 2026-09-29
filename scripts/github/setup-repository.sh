@@ -251,8 +251,12 @@ gh api "repos/$repo" --jq '{allow_squash_merge, allow_merge_commit, allow_rebase
     secret_scanning: .security_and_analysis.secret_scanning.status,
     push_protection: .security_and_analysis.secret_scanning_push_protection.status}'
 gh api "repos/$repo/actions/permissions/fork-pr-contributor-approval"
-gh api "repos/$repo/actions/policies" |
-    jq --arg name "$GATE_POLICY_NAME" '[.. | objects | select(.name? == $name) | {name, enforcement, conditions, rules}]'
+policy_id=$(gh api "repos/$repo/actions/policies" |
+    jq -r --arg name "$GATE_POLICY_NAME" '[.. | objects | select(.name? == $name) | .id] | first // empty')
+if [ -n "$policy_id" ]; then
+    gh api "repos/$repo/actions/policies/$policy_id" \
+        --jq '{name, enforcement, conditions, rules}'
+fi
 gh api "repos/$repo/environments/owner-review" --jq '{name, can_admins_bypass,
     reviewers: [.protection_rules[]? | select(.type == "required_reviewers") | .reviewers[].reviewer.login],
     prevent_self_review: [.protection_rules[]? | select(.type == "required_reviewers") | .prevent_self_review][0]}'
