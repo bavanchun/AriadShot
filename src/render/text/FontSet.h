@@ -6,6 +6,7 @@
 #include "core/Expected.h"
 
 #include <QFont>
+#include <QList>
 #include <QString>
 #include <QStringList>
 
@@ -20,19 +21,34 @@ enum class FontError {
 
 [[nodiscard]] QString describe(FontError error);
 
-// Registers the bundled Linux font resources once. On macOS, the system font and Apple Color Emoji remain in use.
-// Call on the GUI thread before constructing text fonts. Thread: GUI.
+// Owns the bundled Linux font registrations. On macOS, the system font and Apple Color Emoji remain in use.
+// Keep this instance alive while its text fonts are in use. Thread: GUI.
 class FontSet final {
   public:
-    [[nodiscard]] static Expected<void, FontError> registerFonts();
-    [[nodiscard]] static QStringList registeredFamilies();
-    [[nodiscard]] static QString defaultFamily();
+    FontSet() = default;
+    ~FontSet();
+
+    FontSet(const FontSet&) = delete;
+    FontSet& operator=(const FontSet&) = delete;
+    FontSet(FontSet&&) = delete;
+    FontSet& operator=(FontSet&&) = delete;
+
+    [[nodiscard]] Expected<void, FontError> registerFonts();
+    [[nodiscard]] QStringList registeredFamilies() const;
+    [[nodiscard]] QString defaultFamily() const;
 
     // A missing family falls back to the platform default, as MacShot does for an unavailable font-picker choice
     // (macshot/macshot/Model/Annotation.swift:1679-1684@b4d4f3a).
     // Call registerFonts() first and check its result. Thread: GUI.
-    [[nodiscard]] static QFont textFont(const QString& requestedFamily, qreal pointSize, bool bold = false,
-                                        bool italic = false);
+    [[nodiscard]] QFont textFont(const QString& requestedFamily, qreal pointSize, bool bold = false,
+                                 bool italic = false) const;
+
+  private:
+    void removeRegisteredFonts() noexcept;
+
+    QList<int> applicationFontIds_;
+    QStringList registeredFamilies_;
+    bool registered_ = false;
 };
 
 } // namespace ariadshot::render

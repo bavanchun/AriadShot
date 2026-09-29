@@ -25,7 +25,6 @@ QT_SCREEN_SCALE_FACTORS=unset:;\
 QT_AUTO_SCREEN_SCALE_FACTOR=unset:;\
 QT_ENABLE_HIGHDPI_SCALING=unset:;\
 QT_FONT_DPI=unset:;\
-QT_QPA_FONTDIR=set:${PROJECT_SOURCE_DIR}/third_party/fonts;\
 DBUS_SESSION_BUS_ADDRESS=unset:;\
 DEBUGINFOD_URLS=unset:;\
 HOME=set:${root}/home;\
@@ -80,7 +79,7 @@ ariadshot_add_test(NAME render.canonical-image
 ariadshot_add_test(NAME render.font-set
     SOURCES unit/render/tst_FontSet.cpp
     LIBS AriadShot::render
-    LABELS unit golden)
+    LABELS unit)
 
 ariadshot_add_test(NAME render.smoke-golden
     SOURCES golden/tst_RenderSmoke.cpp

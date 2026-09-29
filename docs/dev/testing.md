@@ -78,8 +78,9 @@ reaches the desktop's tray over D-Bus even on the offscreen platform; libdbus fa
 both the unset `DBUS_SESSION_BUS_ADDRESS` and the private `XDG_RUNTIME_DIR` are needed. `DEBUGINFOD_URLS` is unset
 so that a sanitizer report is never symbolized with debug information downloaded during the test: tests fetch
 nothing, and a report reads the same on a workstation as in CI. The sanitizer presets pass with such a theme set in
-the calling shell. Packaging `check()` steps unset the same variables. `QT_QPA_FONTDIR` points to the bundled fonts
-under `third_party/fonts/`.
+the calling shell. Packaging `check()` steps unset the same variables. On Linux, `render::FontSet` explicitly registers
+the bundled fonts from compiled resources. The offscreen Qt platform ignores `QT_QPA_FONTDIR`, so tests do not use that
+environment variable for font selection.
 
 Under ThreadSanitizer (`tsan`), tests run with `ignore_noninstrumented_modules=1`: the system Qt and libstdc++ are
 not instrumented, so only races that AriadShot's instrumented code takes part in are reported. The suppressions in

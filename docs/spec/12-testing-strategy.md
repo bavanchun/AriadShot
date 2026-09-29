@@ -83,7 +83,6 @@ Notes:
 - `QT_QPA_PLATFORM=offscreen` for tiers 0–1;
 - unset: `QT_QPA_PLATFORMTHEME`, `QT_STYLE_OVERRIDE`, `QT_IM_MODULE`, `QT_PLUGIN_PATH`, `QT_SCALE_FACTOR`,
   `QT_SCREEN_SCALE_FACTORS`, `QT_AUTO_SCREEN_SCALE_FACTOR`, `QT_ENABLE_HIGHDPI_SCALING`, `QT_FONT_DPI`;
-- `QT_QPA_FONTDIR` pointing at the bundled fonts once they land (G3);
 - temporary `XDG_CONFIG_HOME`, `XDG_DATA_HOME`, `XDG_CACHE_HOME`, `XDG_STATE_HOME` and `XDG_RUNTIME_DIR` per test.
 
 Tests call `QStandardPaths::setTestModeEnabled(true)`. Features that own global state (the control socket, shortcut
@@ -91,7 +90,8 @@ registrations, the tray, the clipboard selection) honour an instance namespace f
 run them without touching the session. Reason for the neutral environment: a desktop platform theme such as `gtk3`
 loads fontconfig, Pango and GLib into the test process, which makes goldens host-dependent and produces leak reports
 under AddressSanitizer. The sanitizer workflows must pass with such a theme set in the calling shell. Packaging
-`check()` steps unset the same variables.
+`check()` steps unset the same variables. On Linux, `render::FontSet` registers bundled fonts explicitly; the offscreen
+Qt platform ignores `QT_QPA_FONTDIR`.
 
 ## 4. Golden images
 

@@ -3,40 +3,18 @@
 
 #include "render/text/FontSet.h"
 
-#include <QFile>
 #include <QFontDatabase>
 #include <QGuiApplication>
-#include <QResource>
+
+#if defined(Q_OS_LINUX)
+#include <QFile>
 
 #include <array>
 
 static void initializeFontResources() { Q_INIT_RESOURCE(fonts); }
+#endif
 
 namespace ariadshot::render {
-
-namespace {
-
-struct RegistrationState {
-    QList<int> applicationFontIds;
-    QStringList families;
-    bool complete = false;
-};
-
-RegistrationState& registrationState() {
-    static RegistrationState state;
-    return state;
-}
-
-void removeRegisteredFonts(RegistrationState& state) {
-    for (const int id : state.applicationFontIds) {
-        QFontDatabase::removeApplicationFont(id);
-    }
-    state.applicationFontIds.clear();
-    state.families.clear();
-    state.complete = false;
-}
-
-} // namespace
 
 QString describe(FontError error) {
     switch (error) {
@@ -52,9 +30,21 @@ QString describe(FontError error) {
     return QStringLiteral("unknown font registration error");
 }
 
+FontSet::~FontSet() { removeRegisteredFonts(); }
+
+void FontSet::removeRegisteredFonts() noexcept {
+    if (QGuiApplication::instance() != nullptr) {
+        for (const int id : applicationFontIds_) {
+            QFontDatabase::removeApplicationFont(id);
+        }
+    }
+    applicationFontIds_.clear();
+    registeredFamilies_.clear();
+    registered_ = false;
+}
+
 Expected<void, FontError> FontSet::registerFonts() {
-    RegistrationState& state = registrationState();
-    if (state.complete) {
+    if (registered_) {
         return {};
     }
     if (QGuiApplication::instance() == nullptr) {
@@ -76,8 +66,8 @@ Expected<void, FontError> FontSet::registerFonts() {
         {QStringLiteral(":/fonts/noto-color-emoji/NotoColorEmoji.ttf"), QStringLiteral("Noto Color Emoji")},
     }};
 
-    const auto fail = [&state](FontError error) {
-        removeRegisteredFonts(state);
+    const auto fail = [this](FontError error) {
+        removeRegisteredFonts();
         return tl::unexpected<FontError>(error);
     };
 
@@ -96,25 +86,25 @@ Expected<void, FontError> FontSet::registerFonts() {
         if (id < 0) {
             return fail(FontError::RegistrationFailed);
         }
-        state.applicationFontIds.append(id);
+        applicationFontIds_.append(id);
 
         const QStringList families = QFontDatabase::applicationFontFamilies(id);
         if (!families.contains(resource.family)) {
             return fail(FontError::FamilyMismatch);
         }
-        if (!state.families.contains(resource.family)) {
-            state.families.append(resource.family);
+        if (!registeredFamilies_.contains(resource.family)) {
+            registeredFamilies_.append(resource.family);
         }
     }
 #endif
 
-    state.complete = true;
+    registered_ = true;
     return {};
 }
 
-QStringList FontSet::registeredFamilies() { return registrationState().families; }
+QStringList FontSet::registeredFamilies() const { return registeredFamilies_; }
 
-QString FontSet::defaultFamily() {
+QString FontSet::defaultFamily() const {
 #if defined(Q_OS_MACOS)
     return QFontDatabase::systemFont(QFontDatabase::GeneralFont).family();
 #else
@@ -122,8 +112,8 @@ QString FontSet::defaultFamily() {
 #endif
 }
 
-QFont FontSet::textFont(const QString& requestedFamily, qreal pointSize, bool bold, bool italic) {
-    QString family = requestedFamily.trimmed();
+QFont FontSet::textFont(const QString& requestedFamily, qreal pointSize, bool bold, bool italic) const {
+    QString family = requestedFamily;
     if (family.isEmpty() || family == QStringLiteral("System") || !QFontDatabase::families().contains(family)) {
         family = defaultFamily();
     }
