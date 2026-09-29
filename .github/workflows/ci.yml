@@ -126,7 +126,7 @@ jobs:
       CMAKE_CXX_COMPILER_LAUNCHER: ccache
     steps:
       - name: Install packages
-        run: pacman -Syu --noconfirm --needed git cmake ninja qt6-base jq ccache
+        run: pacman -Syu --noconfirm --needed git cmake ninja qt6-base jq ccache sway wayland-utils layer-shell-qt qt6-declarative qt6-wayland qt6-shadertools ffmpeg libva libdrm pipewire mesa vulkan-headers vulkan-validation-layers vulkan-icd-loader vulkan-swrast gpac
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
@@ -143,6 +143,16 @@ jobs:
           restore-keys: ccache-linux-gcc-${{ hashFiles('CMakeLists.txt', 'src/**/CMakeLists.txt', 'tests/**/CMakeLists.txt', 'CMakePresets.json', 'cmake/**') }}-
       - name: Build and test
         run: cmake --workflow --preset ci-dev
+      - name: Wayland tier-2 tests
+        run: ctest --test-dir build/ci-dev -L '^wayland$' --output-on-failure --no-tests=ignore
+      - name: Upload test failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: test-output-${{ github.job }}-${{ github.run_attempt }}
+          path: build/*/tests/environment/*/output/**
+          if-no-files-found: ignore
+          retention-days: 3
 
   linux-clang:
     name: linux-clang
@@ -153,7 +163,7 @@ jobs:
       CMAKE_CXX_COMPILER_LAUNCHER: ccache
     steps:
       - name: Install packages
-        run: pacman -Syu --noconfirm --needed git cmake ninja qt6-base jq ccache clang clazy
+        run: pacman -Syu --noconfirm --needed git cmake ninja qt6-base jq ccache clang clazy sway wayland-utils layer-shell-qt qt6-declarative qt6-wayland qt6-shadertools ffmpeg libva libdrm pipewire mesa vulkan-headers vulkan-validation-layers vulkan-icd-loader vulkan-swrast gpac
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
@@ -181,6 +191,14 @@ jobs:
             grep -Fxf <(jq -r '.[].file' build/dev-clang/compile_commands.json))
           run-clang-tidy -quiet -p build/dev-clang -header-filter "^$GITHUB_WORKSPACE/(src|tests)/" "${files[@]}"
           clazy-standalone -p build/dev-clang/compile_commands.json --checks=level0,level1 "${files[@]}"
+      - name: Upload test failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: test-output-${{ github.job }}-${{ github.run_attempt }}
+          path: build/*/tests/environment/*/output/**
+          if-no-files-found: ignore
+          retention-days: 3
 
   linux-qt-floor:
     name: linux-qt-floor
@@ -196,13 +214,14 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - name: Install packages
-        run: sudo apt-get update && sudo apt-get install --yes ninja-build g++-13 jq ccache
+        run: sudo apt-get update && sudo apt-get install --yes ninja-build g++-13 jq ccache libavcodec-dev libavformat-dev libavutil-dev libswscale-dev libva-dev libdrm-dev libpipewire-0.3-dev libgbm-dev libwayland-dev
       - uses: jurplel/install-qt-action@a9c63c7c123f3069cff414e7e482d95dfa9d8125 # v4.4.1
         with:
           version: ${{ env.QT_PINNED_VERSION }}
           host: linux
           target: desktop
           arch: linux_gcc_64
+          modules: qtshadertools
           cache: true
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -213,6 +232,14 @@ jobs:
         env:
           ARIADSHOT_EXPECT_QT_VERSION: ${{ env.QT_PINNED_VERSION }}
         run: cmake --workflow --preset ci-dev
+      - name: Upload test failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: test-output-${{ github.job }}-${{ github.run_attempt }}
+          path: build/*/tests/environment/*/output/**
+          if-no-files-found: ignore
+          retention-days: 3
 
   macos:
     name: macos
@@ -248,6 +275,14 @@ jobs:
         env:
           ARIADSHOT_EXPECT_QT_VERSION: ${{ env.QT_PINNED_VERSION }}
         run: cmake --workflow --preset ci-dev
+      - name: Upload test failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: test-output-${{ github.job }}-${{ github.run_attempt }}
+          path: build/*/tests/environment/*/output/**
+          if-no-files-found: ignore
+          retention-days: 3
 
   # The only per-pull-request check of the macOS 14 runtime. Required until GitHub retires the image on 2026-11-02;
   # then the scheduled run on the macOS 14 VM replaces it.
@@ -284,3 +319,11 @@ jobs:
         env:
           ARIADSHOT_EXPECT_QT_VERSION: ${{ env.QT_PINNED_VERSION }}
         run: cmake --workflow --preset ci-dev
+      - name: Upload test failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: test-output-${{ github.job }}-${{ github.run_attempt }}
+          path: build/*/tests/environment/*/output/**
+          if-no-files-found: ignore
+          retention-days: 3
