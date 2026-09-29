@@ -136,7 +136,7 @@ jobs:
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
           echo "CCACHE_BASEDIR=$GITHUB_WORKSPACE" >>"$GITHUB_ENV"
           echo "CCACHE_DIR=$HOME/.ccache" >>"$GITHUB_ENV"
-      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.ccache
           key: ccache-linux-gcc-${{ hashFiles('CMakeLists.txt', 'src/**/CMakeLists.txt', 'tests/**/CMakeLists.txt', 'CMakePresets.json', 'cmake/**') }}-${{ github.sha }}
@@ -163,7 +163,7 @@ jobs:
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
           echo "CCACHE_BASEDIR=$GITHUB_WORKSPACE" >>"$GITHUB_ENV"
           echo "CCACHE_DIR=$HOME/.ccache" >>"$GITHUB_ENV"
-      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.ccache
           key: ccache-linux-clang-${{ hashFiles('CMakeLists.txt', 'src/**/CMakeLists.txt', 'tests/**/CMakeLists.txt', 'CMakePresets.json', 'cmake/**') }}-${{ github.sha }}
@@ -204,7 +204,7 @@ jobs:
           target: desktop
           arch: linux_gcc_64
           cache: true
-      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/ccache
           key: ccache-linux-qt-floor-${{ hashFiles('CMakeLists.txt', 'src/**/CMakeLists.txt', 'tests/**/CMakeLists.txt', 'CMakePresets.json', 'cmake/**') }}-${{ github.sha }}
@@ -239,7 +239,7 @@ jobs:
           target: desktop
           arch: clang_64
           cache: true
-      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.ccache
           key: ccache-macos-${{ hashFiles('CMakeLists.txt', 'src/**/CMakeLists.txt', 'tests/**/CMakeLists.txt', 'CMakePresets.json', 'cmake/**') }}-${{ github.sha }}
@@ -275,7 +275,7 @@ jobs:
           target: desktop
           arch: clang_64
           cache: true
-      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.ccache
           key: ccache-macos-14-${{ hashFiles('CMakeLists.txt', 'src/**/CMakeLists.txt', 'tests/**/CMakeLists.txt', 'CMakePresets.json', 'cmake/**') }}-${{ github.sha }}
