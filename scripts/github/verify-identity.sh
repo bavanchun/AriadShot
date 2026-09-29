@@ -184,7 +184,7 @@ verify_owner() {
     policy_id=$(gh api "repos/$repo/actions/policies" 2>/dev/null |
         jq -r '[.. | objects | select(.name? == "owner-gate-pull-request-target") | .id] | first // empty' 2>/dev/null)
     if [ -n "$policy_id" ]; then
-        gate_policy=$(gh api "repos/$repo/actions/policies/$policy_id" 2>/dev/null)
+        gate_policy=$(gh api "repos/$repo/actions/policies/$policy_id" 2>/dev/null) || gate_policy=""
     fi
     if [ -z "$gate_policy" ]; then
         fail "no Actions event policy permits pull_request_target for the owner gate (run setup-repository.sh)"

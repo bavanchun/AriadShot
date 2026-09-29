@@ -256,6 +256,8 @@ policy_id=$(gh api "repos/$repo/actions/policies" |
 if [ -n "$policy_id" ]; then
     gh api "repos/$repo/actions/policies/$policy_id" \
         --jq '{name, enforcement, conditions, rules}'
+else
+    echo "no owner-gate event policy"
 fi
 gh api "repos/$repo/environments/owner-review" --jq '{name, can_admins_bypass,
     reviewers: [.protection_rules[]? | select(.type == "required_reviewers") | .reviewers[].reviewer.login],
