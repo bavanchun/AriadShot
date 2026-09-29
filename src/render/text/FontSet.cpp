@@ -34,17 +34,17 @@ FontSet::~FontSet() { removeRegisteredFonts(); }
 
 void FontSet::removeRegisteredFonts() noexcept {
     if (QGuiApplication::instance() != nullptr) {
-        for (const int id : applicationFontIds_) {
+        for (const int id : m_applicationFontIds) {
             QFontDatabase::removeApplicationFont(id);
         }
     }
-    applicationFontIds_.clear();
-    registeredFamilies_.clear();
-    registered_ = false;
+    m_applicationFontIds.clear();
+    m_registeredFamilies.clear();
+    m_registered = false;
 }
 
 Expected<void, FontError> FontSet::registerFonts() {
-    if (registered_) {
+    if (m_registered) {
         return {};
     }
     if (QGuiApplication::instance() == nullptr) {
@@ -59,11 +59,12 @@ Expected<void, FontError> FontSet::registerFonts() {
         QString family;
     };
     static const std::array<FontResource, 5> resources{{
-        {QStringLiteral(":/fonts/inter/Inter-Regular.ttf"), QStringLiteral("Inter")},
-        {QStringLiteral(":/fonts/inter/Inter-Italic.ttf"), QStringLiteral("Inter")},
-        {QStringLiteral(":/fonts/inter/Inter-Bold.ttf"), QStringLiteral("Inter")},
-        {QStringLiteral(":/fonts/inter/Inter-BoldItalic.ttf"), QStringLiteral("Inter")},
-        {QStringLiteral(":/fonts/noto-color-emoji/NotoColorEmoji.ttf"), QStringLiteral("Noto Color Emoji")},
+        {.path = QStringLiteral(":/fonts/inter/Inter-Regular.ttf"), .family = QStringLiteral("Inter")},
+        {.path = QStringLiteral(":/fonts/inter/Inter-Italic.ttf"), .family = QStringLiteral("Inter")},
+        {.path = QStringLiteral(":/fonts/inter/Inter-Bold.ttf"), .family = QStringLiteral("Inter")},
+        {.path = QStringLiteral(":/fonts/inter/Inter-BoldItalic.ttf"), .family = QStringLiteral("Inter")},
+        {.path = QStringLiteral(":/fonts/noto-color-emoji/NotoColorEmoji.ttf"),
+         .family = QStringLiteral("Noto Color Emoji")},
     }};
 
     const auto fail = [this](FontError error) {
@@ -86,23 +87,23 @@ Expected<void, FontError> FontSet::registerFonts() {
         if (id < 0) {
             return fail(FontError::RegistrationFailed);
         }
-        applicationFontIds_.append(id);
+        m_applicationFontIds.append(id);
 
         const QStringList families = QFontDatabase::applicationFontFamilies(id);
         if (!families.contains(resource.family)) {
             return fail(FontError::FamilyMismatch);
         }
-        if (!registeredFamilies_.contains(resource.family)) {
-            registeredFamilies_.append(resource.family);
+        if (!m_registeredFamilies.contains(resource.family)) {
+            m_registeredFamilies.append(resource.family);
         }
     }
 #endif
 
-    registered_ = true;
+    m_registered = true;
     return {};
 }
 
-QStringList FontSet::registeredFamilies() const { return registeredFamilies_; }
+QStringList FontSet::registeredFamilies() const { return m_registeredFamilies; }
 
 QString FontSet::defaultFamily() const {
 #if defined(Q_OS_MACOS)

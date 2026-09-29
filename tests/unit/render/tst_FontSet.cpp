@@ -32,42 +32,42 @@ class FontSetTest : public QObject {
     void resolvedEmojiFontUsesBundledData();
 
   private:
-    FontSet fonts_;
+    FontSet m_fonts;
 };
 
 static_assert(std::is_member_function_pointer_v<decltype(&FontSet::registerFonts)>);
 static_assert(std::is_member_function_pointer_v<decltype(&FontSet::textFont)>);
 
 void FontSetTest::initTestCase() {
-    const auto result = fonts_.registerFonts();
+    const auto result = m_fonts.registerFonts();
     if (!result.has_value()) {
         QFAIL(qPrintable(ariadshot::render::describe(result.error())));
     }
 }
 
 void FontSetTest::registersBundledFamilies() {
-    const auto result = fonts_.registerFonts();
+    const auto result = m_fonts.registerFonts();
     if (!result.has_value()) {
         QFAIL(qPrintable(ariadshot::render::describe(result.error())));
     }
 
 #if defined(Q_OS_MACOS)
-    QVERIFY(fonts_.registeredFamilies().isEmpty());
-    QVERIFY(!fonts_.registeredFamilies().contains(QStringLiteral("Noto Color Emoji")));
+    QVERIFY(m_fonts.registeredFamilies().isEmpty());
+    QVERIFY(!m_fonts.registeredFamilies().contains(QStringLiteral("Noto Color Emoji")));
 #else
-    QCOMPARE(fonts_.registeredFamilies(), (QStringList{QStringLiteral("Inter"), QStringLiteral("Noto Color Emoji")}));
+    QCOMPARE(m_fonts.registeredFamilies(), (QStringList{QStringLiteral("Inter"), QStringLiteral("Noto Color Emoji")}));
     QVERIFY(QFontDatabase::families().contains(QStringLiteral("Inter")));
     QVERIFY(QFontDatabase::families().contains(QStringLiteral("Noto Color Emoji")));
 #endif
 
-    const auto repeated = fonts_.registerFonts();
+    const auto repeated = m_fonts.registerFonts();
     if (!repeated.has_value()) {
         QFAIL(qPrintable(ariadshot::render::describe(repeated.error())));
     }
 #if defined(Q_OS_MACOS)
-    QVERIFY(fonts_.registeredFamilies().isEmpty());
+    QVERIFY(m_fonts.registeredFamilies().isEmpty());
 #else
-    QCOMPARE(fonts_.registeredFamilies(), (QStringList{QStringLiteral("Inter"), QStringLiteral("Noto Color Emoji")}));
+    QCOMPARE(m_fonts.registeredFamilies(), (QStringList{QStringLiteral("Inter"), QStringLiteral("Noto Color Emoji")}));
 #endif
 }
 
@@ -75,9 +75,9 @@ void FontSetTest::textFontUsesExplicitFamiliesAndRenderingSettings() {
     // MacShot starts from its system font and converts it to bold/italic when those text traits are selected
     // (macshot/macshot/Model/Annotation.swift:1679-1693@b4d4f3a).
 #if defined(Q_OS_MACOS)
-    const QFont font = fonts_.textFont(QString{}, 20.0, true, true);
+    const QFont font = m_fonts.textFont(QString{}, 20.0, true, true);
 #else
-    const QFont font = fonts_.textFont(QStringLiteral("Inter"), 20.0, true, true);
+    const QFont font = m_fonts.textFont(QStringLiteral("Inter"), 20.0, true, true);
 #endif
 
 #if defined(Q_OS_MACOS)
@@ -93,8 +93,8 @@ void FontSetTest::textFontUsesExplicitFamiliesAndRenderingSettings() {
 }
 
 void FontSetTest::missingFamilyFallsBackToDefault() {
-    const QFont font = fonts_.textFont(QStringLiteral("AriadShot Missing Font"), 20.0);
-    QCOMPARE(font.families().first(), fonts_.defaultFamily());
+    const QFont font = m_fonts.textFont(QStringLiteral("AriadShot Missing Font"), 20.0);
+    QCOMPARE(font.families().first(), m_fonts.defaultFamily());
 #if defined(Q_OS_MACOS)
     QCOMPARE(font.families().last(), QStringLiteral("Apple Color Emoji"));
 #else
@@ -106,8 +106,8 @@ void FontSetTest::requestedFamilyIsNotTrimmed() {
     // MacShot resolves the exact selected family name, then falls back if it is unavailable
     // (macshot/macshot/Model/Annotation.swift:1679-1684@b4d4f3a).
 #if defined(Q_OS_LINUX)
-    const QFont font = fonts_.textFont(QStringLiteral("Noto Color Emoji "), 20.0);
-    QCOMPARE(font.families().first(), fonts_.defaultFamily());
+    const QFont font = m_fonts.textFont(QStringLiteral("Noto Color Emoji "), 20.0);
+    QCOMPARE(font.families().first(), m_fonts.defaultFamily());
 #else
     QSKIP("the bundled picker family is available only on Linux");
 #endif
@@ -129,7 +129,7 @@ void FontSetTest::emojiGlyphRendersColouredPixels() {
     QVERIFY(!image.isNull());
 
     QPainter painter(&image);
-    QFont font = fonts_.textFont(QStringLiteral("Inter"), 20.0);
+    QFont font = m_fonts.textFont(QStringLiteral("Inter"), 20.0);
     font.setPixelSize(112);
     painter.setFont(font);
     painter.drawText(image.rect(), Qt::AlignCenter, QStringLiteral("😀"));
@@ -150,7 +150,7 @@ void FontSetTest::emojiGlyphRendersColouredPixels() {
 
 void FontSetTest::resolvedEmojiFontUsesBundledData() {
 #if defined(Q_OS_LINUX)
-    const QFont font = fonts_.textFont(QStringLiteral("Inter"), 20.0);
+    const QFont font = m_fonts.textFont(QStringLiteral("Inter"), 20.0);
     QTextLayout layout(QStringLiteral("😀"), font);
     layout.beginLayout();
     Q_UNUSED(layout.createLine());

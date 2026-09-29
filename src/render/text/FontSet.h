@@ -10,9 +10,11 @@
 #include <QString>
 #include <QStringList>
 
+#include <cstdint>
+
 namespace ariadshot::render {
 
-enum class FontError {
+enum class FontError : std::uint8_t {
     GuiApplicationUnavailable,
     ResourceUnavailable,
     RegistrationFailed,
@@ -46,9 +48,9 @@ class FontSet final {
   private:
     void removeRegisteredFonts() noexcept;
 
-    QList<int> applicationFontIds_;
-    QStringList registeredFamilies_;
-    bool registered_ = false;
+    QList<int> m_applicationFontIds;
+    QStringList m_registeredFamilies;
+    bool m_registered = false;
 };
 
 } // namespace ariadshot::render
