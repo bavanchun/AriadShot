@@ -78,8 +78,8 @@ reaches the desktop's tray over D-Bus even on the offscreen platform; libdbus fa
 both the unset `DBUS_SESSION_BUS_ADDRESS` and the private `XDG_RUNTIME_DIR` are needed. `DEBUGINFOD_URLS` is unset
 so that a sanitizer report is never symbolized with debug information downloaded during the test: tests fetch
 nothing, and a report reads the same on a workstation as in CI. The sanitizer presets pass with such a theme set in
-the calling shell. Packaging `check()` steps unset the same variables. Bundled fonts (`QT_QPA_FONTDIR`) join the
-environment when they are added.
+the calling shell. Packaging `check()` steps unset the same variables. `QT_QPA_FONTDIR` points to the bundled fonts
+under `third_party/fonts/`.
 
 Under ThreadSanitizer (`tsan`), tests run with `ignore_noninstrumented_modules=1`: the system Qt and libstdc++ are
 not instrumented, so only races that AriadShot's instrumented code takes part in are reported. The suppressions in
@@ -88,7 +88,9 @@ not instrumented, so only races that AriadShot's instrumented code takes part in
 ## Golden images
 
 The comparator is [`tests/support/ImageCompare`](../../tests/support/ImageCompare.h), tested against the published
-CIEDE2000 data of Sharma, Wu and Dalal (2005).
+CIEDE2000 data of Sharma, Wu and Dalal (2005). Golden reviews can use
+[`ariadshot-imgdiff`](../../tools/imgdiff/) with `--class exact|presentation|corpus [--mask mask.png] actual.png
+expected.png [--out dir]`.
 
 - **Exact class** — canonical renders, PNG round trips, same-platform regression goldens, presentation at integer
   scale: equal size and device pixel ratio, and byte-equal pixels after converting both images to

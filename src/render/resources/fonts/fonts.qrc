@@ -1,0 +1,13 @@
+<!--
+SPDX-FileCopyrightText: 2026 The AriadShot Authors
+SPDX-License-Identifier: GPL-3.0-only
+-->
+<RCC>
+    <qresource prefix="/fonts">
+        <file alias="inter/Inter-Regular.ttf">../../../../third_party/fonts/inter/Inter-Regular.ttf</file>
+        <file alias="inter/Inter-Italic.ttf">../../../../third_party/fonts/inter/Inter-Italic.ttf</file>
+        <file alias="inter/Inter-Bold.ttf">../../../../third_party/fonts/inter/Inter-Bold.ttf</file>
+        <file alias="inter/Inter-BoldItalic.ttf">../../../../third_party/fonts/inter/Inter-BoldItalic.ttf</file>
+        <file alias="noto-color-emoji/NotoColorEmoji.ttf">../../../../third_party/fonts/noto-color-emoji/NotoColorEmoji.ttf</file>
+    </qresource>
+</RCC>

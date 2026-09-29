@@ -25,6 +25,7 @@ QT_SCREEN_SCALE_FACTORS=unset:;\
 QT_AUTO_SCREEN_SCALE_FACTOR=unset:;\
 QT_ENABLE_HIGHDPI_SCALING=unset:;\
 QT_FONT_DPI=unset:;\
+QT_QPA_FONTDIR=set:${PROJECT_SOURCE_DIR}/third_party/fonts;\
 DBUS_SESSION_BUS_ADDRESS=unset:;\
 DEBUGINFOD_URLS=unset:;\
 HOME=set:${root}/home;\
@@ -76,11 +77,78 @@ ariadshot_add_test(NAME render.canonical-image
     LIBS AriadShot::render
     LABELS unit)
 
+ariadshot_add_test(NAME render.font-set
+    SOURCES unit/render/tst_FontSet.cpp
+    LIBS AriadShot::render
+    LABELS unit golden)
+
 ariadshot_add_test(NAME render.smoke-golden
     SOURCES golden/tst_RenderSmoke.cpp
     LIBS AriadShot::render ariadshot_test_support
     LABELS golden)
 target_compile_definitions(tst_render_smoke_golden PRIVATE ARIADSHOT_GOLDEN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/golden")
+
+set(imgdiff_cases "${CMAKE_CURRENT_SOURCE_DIR}/scripts/imgdiff-cases")
+add_test(NAME scripts.imgdiff.exact-pass
+    COMMAND "$<TARGET_FILE:ariadshot-imgdiff>" --class exact
+            "${imgdiff_cases}/actual.png" "${imgdiff_cases}/expected.png")
+set_tests_properties(scripts.imgdiff.exact-pass PROPERTIES
+    PASS_REGULAR_EXPRESSION "comparison: passed; class: exact" LABELS unit)
+ariadshot_test_environment(scripts.imgdiff.exact-pass)
+
+add_test(NAME scripts.imgdiff.exact-fail
+    COMMAND "${CMAKE_COMMAND}"
+            "-DIMGDIFF=$<TARGET_FILE:ariadshot-imgdiff>"
+            "-DCASE=exact-fail"
+            "-DACTUAL=${imgdiff_cases}/actual.png"
+            "-DEXPECTED=${imgdiff_cases}/different.png"
+            -P "${imgdiff_cases}/check-exit.cmake")
+set_tests_properties(scripts.imgdiff.exact-fail PROPERTIES
+    PASS_REGULAR_EXPRESSION "imgdiff case: passed" LABELS unit)
+ariadshot_test_environment(scripts.imgdiff.exact-fail)
+
+add_test(NAME scripts.imgdiff.presentation-pass
+    COMMAND "$<TARGET_FILE:ariadshot-imgdiff>" --class presentation
+            "${imgdiff_cases}/actual.png" "${imgdiff_cases}/close.png")
+set_tests_properties(scripts.imgdiff.presentation-pass PROPERTIES
+    PASS_REGULAR_EXPRESSION "comparison: passed; class: presentation" LABELS unit)
+ariadshot_test_environment(scripts.imgdiff.presentation-pass)
+
+add_test(NAME scripts.imgdiff.corpus-pass
+    COMMAND "$<TARGET_FILE:ariadshot-imgdiff>" --class corpus
+            "${imgdiff_cases}/actual.png" "${imgdiff_cases}/close.png")
+set_tests_properties(scripts.imgdiff.corpus-pass PROPERTIES
+    PASS_REGULAR_EXPRESSION "comparison: passed; class: corpus" LABELS unit)
+ariadshot_test_environment(scripts.imgdiff.corpus-pass)
+
+add_test(NAME scripts.imgdiff.mask-pass
+    COMMAND "$<TARGET_FILE:ariadshot-imgdiff>" --class presentation --mask "${imgdiff_cases}/mask.png"
+            "${imgdiff_cases}/actual.png" "${imgdiff_cases}/different.png")
+set_tests_properties(scripts.imgdiff.mask-pass PROPERTIES
+    PASS_REGULAR_EXPRESSION "comparison: passed; class: presentation" LABELS unit)
+ariadshot_test_environment(scripts.imgdiff.mask-pass)
+
+add_test(NAME scripts.imgdiff.usage-error
+    COMMAND "${CMAKE_COMMAND}"
+            "-DIMGDIFF=$<TARGET_FILE:ariadshot-imgdiff>"
+            "-DCASE=usage-error"
+            "-DACTUAL=${imgdiff_cases}/actual.png"
+            "-DEXPECTED=${imgdiff_cases}/expected.png"
+            -P "${imgdiff_cases}/check-exit.cmake")
+set_tests_properties(scripts.imgdiff.usage-error PROPERTIES
+    PASS_REGULAR_EXPRESSION "imgdiff case: passed" LABELS unit)
+ariadshot_test_environment(scripts.imgdiff.usage-error)
+
+add_test(NAME scripts.imgdiff.failure-artifacts
+    COMMAND "${CMAKE_COMMAND}"
+            "-DIMGDIFF=$<TARGET_FILE:ariadshot-imgdiff>"
+            "-DACTUAL=${imgdiff_cases}/actual.png"
+            "-DEXPECTED=${imgdiff_cases}/different.png"
+            "-DOUTPUT_DIR=${ARIADSHOT_TEST_ROOT}/scripts.imgdiff.failure-artifacts/output/failure"
+            -P "${imgdiff_cases}/check-artifacts.cmake")
+set_tests_properties(scripts.imgdiff.failure-artifacts PROPERTIES
+    PASS_REGULAR_EXPRESSION "imgdiff artifact case: passed" LABELS unit)
+ariadshot_test_environment(scripts.imgdiff.failure-artifacts)
 
 ariadshot_add_test(NAME app.tray-controller
     SOURCES unit/app/tst_TrayController.cpp
