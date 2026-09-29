@@ -1,0 +1,7 @@
+# SPDX-FileCopyrightText: 2026 The AriadShot Authors
+# SPDX-License-Identifier: GPL-3.0-only
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/bavanchun/AriadShot/security/advisories/new
+    about: Report vulnerabilities privately through GitHub's private vulnerability reporting, never in a public issue.

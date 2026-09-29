@@ -1,0 +1,44 @@
+{
+  "attribution": {
+    "commit": "",
+    "pr": ""
+  },
+  "permissions": {
+    "deny": [
+      "mcp__claude-in-chrome__*",
+      "mcp__chrome-devtools__*",
+      "mcp__playwright__*",
+      "mcp__puppeteer__*",
+      "mcp__computer-use__*",
+      "Bash(agent-browser:*)",
+      "Bash(npx agent-browser:*)",
+      "Bash(chrome-profile:*)",
+      "Bash(terminal-browser:*)",
+      "Bash(orca computer:*)",
+      "Bash(orca-ide computer:*)",
+      "Bash(orca-dev computer:*)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/scripts/agent-guard/claude-hook.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/scripts/agent-guard/claude-hook.sh"
+          }
+        ]
+      }
+    ]
+  }
+}

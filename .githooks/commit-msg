@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 The AriadShot Authors
+# SPDX-License-Identifier: GPL-3.0-only
+#
+# Commit message rules: Conventional Commits, no AI references or attribution, no plan, ledger, gate or milestone IDs.
+
+exec "$(git rev-parse --show-toplevel)/scripts/check-commit-message.sh" "$1"

@@ -1,0 +1,16 @@
+{
+  "agent-guard": {
+    "PreToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "../scripts/agent-guard/agy-hook.sh",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}

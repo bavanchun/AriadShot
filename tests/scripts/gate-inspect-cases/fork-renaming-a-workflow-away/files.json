@@ -1,0 +1,11 @@
+[
+  {
+    "sha": "8c3f0e1a2b4d6f8091a2b3c4d5e6f708192a3b4c",
+    "filename": "docs/old-ci.yml",
+    "status": "renamed",
+    "additions": 4,
+    "deletions": 0,
+    "changes": 4,
+    "previous_filename": ".github/workflows/ci.yml"
+  }
+]

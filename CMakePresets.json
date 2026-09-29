@@ -1,0 +1,202 @@
+{
+  "version": 8,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 28,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "BUILD_TESTING": "ON",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+      }
+    },
+    {
+      "name": "ci",
+      "hidden": true,
+      "description": "Warnings are errors; the job environment may pin the expected Qt version.",
+      "cacheVariables": {
+        "ARIADSHOT_WERROR": "ON",
+        "CMAKE_COMPILE_WARNING_AS_ERROR": "ON",
+        "ARIADSHOT_EXPECT_QT_VERSION": "$env{ARIADSHOT_EXPECT_QT_VERSION}"
+      }
+    },
+    {
+      "name": "dev",
+      "inherits": "base",
+      "displayName": "Debug, platform default compiler",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "dev-clang",
+      "inherits": "dev",
+      "displayName": "Debug, Clang",
+      "cacheVariables": {
+        "CMAKE_CXX_COMPILER": "clang++"
+      }
+    },
+    {
+      "name": "asan",
+      "inherits": "dev-clang",
+      "displayName": "Debug, Clang, AddressSanitizer and UndefinedBehaviorSanitizer",
+      "cacheVariables": {
+        "ARIADSHOT_SANITIZE": "address,undefined"
+      }
+    },
+    {
+      "name": "tsan",
+      "inherits": "dev-clang",
+      "displayName": "Debug, Clang, ThreadSanitizer",
+      "cacheVariables": {
+        "ARIADSHOT_SANITIZE": "thread"
+      }
+    },
+    {
+      "name": "release",
+      "inherits": "base",
+      "displayName": "RelWithDebInfo, platform default compiler, hardened",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "ARIADSHOT_HARDENING": "ON"
+      }
+    },
+    {
+      "name": "ci-dev",
+      "inherits": ["ci", "dev"],
+      "displayName": "CI: dev with warnings as errors"
+    },
+    {
+      "name": "ci-asan",
+      "inherits": ["ci", "asan"],
+      "displayName": "CI: asan with warnings as errors"
+    },
+    {
+      "name": "ci-tsan",
+      "inherits": ["ci", "tsan"],
+      "displayName": "CI: tsan with warnings as errors"
+    }
+  ],
+  "buildPresets": [
+    { "name": "dev", "configurePreset": "dev" },
+    { "name": "dev-clang", "configurePreset": "dev-clang" },
+    { "name": "asan", "configurePreset": "asan" },
+    { "name": "tsan", "configurePreset": "tsan" },
+    { "name": "release", "configurePreset": "release" },
+    { "name": "ci-dev", "configurePreset": "ci-dev" },
+    { "name": "ci-asan", "configurePreset": "ci-asan" },
+    { "name": "ci-tsan", "configurePreset": "ci-tsan" }
+  ],
+  "testPresets": [
+    {
+      "name": "common",
+      "hidden": true,
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error"
+      }
+    },
+    {
+      "name": "offscreen",
+      "hidden": true,
+      "inherits": "common",
+      "filter": {
+        "exclude": {
+          "label": "^(wayland|nested-hyprland|live)$"
+        }
+      }
+    },
+    {
+      "name": "thread-safe",
+      "hidden": true,
+      "inherits": "common",
+      "filter": {
+        "include": {
+          "label": "^tsan-safe$"
+        }
+      }
+    },
+    { "name": "dev", "inherits": "offscreen", "configurePreset": "dev" },
+    { "name": "dev-clang", "inherits": "offscreen", "configurePreset": "dev-clang" },
+    { "name": "asan", "inherits": "offscreen", "configurePreset": "asan" },
+    { "name": "tsan", "inherits": "thread-safe", "configurePreset": "tsan" },
+    { "name": "release", "inherits": "offscreen", "configurePreset": "release" },
+    { "name": "ci-dev", "inherits": "offscreen", "configurePreset": "ci-dev" },
+    { "name": "ci-asan", "inherits": "offscreen", "configurePreset": "ci-asan" },
+    { "name": "ci-tsan", "inherits": "thread-safe", "configurePreset": "ci-tsan" }
+  ],
+  "workflowPresets": [
+    {
+      "name": "dev",
+      "steps": [
+        { "type": "configure", "name": "dev" },
+        { "type": "build", "name": "dev" },
+        { "type": "test", "name": "dev" }
+      ]
+    },
+    {
+      "name": "dev-clang",
+      "steps": [
+        { "type": "configure", "name": "dev-clang" },
+        { "type": "build", "name": "dev-clang" },
+        { "type": "test", "name": "dev-clang" }
+      ]
+    },
+    {
+      "name": "asan",
+      "steps": [
+        { "type": "configure", "name": "asan" },
+        { "type": "build", "name": "asan" },
+        { "type": "test", "name": "asan" }
+      ]
+    },
+    {
+      "name": "tsan",
+      "steps": [
+        { "type": "configure", "name": "tsan" },
+        { "type": "build", "name": "tsan" },
+        { "type": "test", "name": "tsan" }
+      ]
+    },
+    {
+      "name": "release",
+      "steps": [
+        { "type": "configure", "name": "release" },
+        { "type": "build", "name": "release" },
+        { "type": "test", "name": "release" }
+      ]
+    },
+    {
+      "name": "ci-dev",
+      "steps": [
+        { "type": "configure", "name": "ci-dev" },
+        { "type": "build", "name": "ci-dev" },
+        { "type": "test", "name": "ci-dev" }
+      ]
+    },
+    {
+      "name": "ci-asan",
+      "steps": [
+        { "type": "configure", "name": "ci-asan" },
+        { "type": "build", "name": "ci-asan" },
+        { "type": "test", "name": "ci-asan" }
+      ]
+    },
+    {
+      "name": "ci-tsan",
+      "steps": [
+        { "type": "configure", "name": "ci-tsan" },
+        { "type": "build", "name": "ci-tsan" },
+        { "type": "test", "name": "ci-tsan" }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,104 @@
+# SPDX-FileCopyrightText: 2026 The AriadShot Authors
+# SPDX-License-Identifier: GPL-3.0-only
+#
+# The commit-policy required check: pull request title and body, every commit message, pull request size and DCO.
+# It also runs when labels change, because the size/exception label changes the size verdict. The pull request is data;
+# the checkers come from its base commit, so a pull request cannot weaken the checks that judge it
+# (docs/dev/agent-workflow.md, "Trusted policy checks").
+
+name: pr-policy
+
+on:
+  pull_request:
+    types: [opened, synchronize, edited, labeled, unlabeled]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-policy-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  commit-policy:
+    name: commit-policy
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+    steps:
+      - name: Check out the pull request
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: candidate
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Check out the trusted checkers
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: trusted
+          ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
+      - name: Resolve the commit range and the checkers
+        id: setup
+        working-directory: candidate
+        env:
+          # The repository's first commit, which predates the checkers: the one-time bootstrap exception
+          # (docs/dev/agent-workflow.md, "Trusted policy checks").
+          BOOTSTRAP_BASE: bbf2d44a2dd1d52b39978199d4139c4e2ca8f224
+        run: |
+          # Fail closed: both ends must exist in the full history.
+          if [ -z "$BASE_SHA" ] || [ -z "$HEAD_SHA" ] ||
+              ! git cat-file -e "$BASE_SHA^{commit}" || ! git cat-file -e "$HEAD_SHA^{commit}"; then
+            echo "Cannot resolve the commit range '$BASE_SHA..$HEAD_SHA'" >&2
+            exit 1
+          fi
+          if [ -f "$GITHUB_WORKSPACE/trusted/scripts/check-commit-message.sh" ]; then
+            checkers=$GITHUB_WORKSPACE/trusted/scripts
+          elif [ "$BASE_SHA" = "$BOOTSTRAP_BASE" ]; then
+            # One-time bootstrap exception, reviewed by the owner: the pull request that adds the checkers to the
+            # repository's first commit is judged by its own. Any other base without checkers fails.
+            checkers=$GITHUB_WORKSPACE/candidate/scripts
+            echo "Bootstrap exception: the base is the repository's first commit ($BOOTSTRAP_BASE), which has no" \
+              "checkers, so this pull request's own checkers ran. The owner reviews them before approving the gate." \
+              >>"$GITHUB_STEP_SUMMARY"
+          else
+            echo "The base commit has no scripts/check-commit-message.sh" >&2
+            exit 1
+          fi
+          echo "checkers=$checkers" >>"$GITHUB_OUTPUT"
+      - name: Pull request title and body
+        working-directory: candidate
+        env:
+          CHECKERS: ${{ steps.setup.outputs.checkers }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          printf '%s' "$PR_TITLE" >"$RUNNER_TEMP/pr-title"
+          printf '%s' "$PR_BODY" >"$RUNNER_TEMP/pr-body"
+          status=0
+          bash "$CHECKERS/check-commit-message.sh" --pr-title "$RUNNER_TEMP/pr-title" || status=1
+          bash "$CHECKERS/check-commit-message.sh" --pr-body "$RUNNER_TEMP/pr-body" || status=1
+          exit "$status"
+      - name: Commit messages
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        working-directory: candidate
+        env:
+          CHECKERS: ${{ steps.setup.outputs.checkers }}
+        run: bash "$CHECKERS/check-commit-message.sh" --range "$BASE_SHA..$HEAD_SHA"
+      - name: Pull request size
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        working-directory: candidate
+        env:
+          CHECKERS: ${{ steps.setup.outputs.checkers }}
+          LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+        run: bash "$CHECKERS/check-pr-size.sh" --range "$BASE_SHA..$HEAD_SHA" --labels-json "$LABELS"
+      - name: Developer Certificate of Origin
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        working-directory: candidate
+        env:
+          CHECKERS: ${{ steps.setup.outputs.checkers }}
+          AUTHOR: ${{ github.event.pull_request.user.login }}
+          OWNER: ${{ github.repository_owner }}
+        run: bash "$CHECKERS/check-dco.sh" --range "$BASE_SHA..$HEAD_SHA" --author "$AUTHOR" --owner "$OWNER"

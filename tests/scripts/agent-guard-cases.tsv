@@ -1,0 +1,87 @@
+# SPDX-FileCopyrightText: 2026 The AriadShot Authors
+# SPDX-License-Identifier: GPL-3.0-only
+#
+# Cases for the agent guard, fed through the real adapters by run-agent-guard-case.sh. One case per line, tab-separated:
+#   name  tools  cwd  environment  expectation  input
+# tools: <Claude tool>/<agy tool>; "-" skips that runtime. Bash and run_command take a command; the other tools a path.
+# cwd: the directory of the call. environment: "-" (ARIADSHOT_MACSHOT_DIR set), "macshot-empty" (the variable is
+# empty) or "no-jq" (jq is not on PATH). expectation: allow, or deny:<rule>, matched against the guard's own message.
+# Placeholders: @WORK@ a repository on branch feat/maintenance with a local tag v0.1.0; @MAIN@ a repository on main;
+# @MACSHOT@ a MacShot tree at @TMP@/reference/macshot, next to @WORK@ (@TMP@/work).
+push-feature-branch	Bash/run_command	@WORK@	-	allow	git push origin feat/maintenance
+push-feature-branch-upstream	Bash/run_command	@WORK@	-	allow	git push -u origin HEAD
+bare-push-on-feature-branch	Bash/run_command	@WORK@	-	allow	git push
+bare-push-on-main	Bash/run_command	@MAIN@	-	deny:push-to-main	git push
+bare-push-to-remote-on-main	Bash/run_command	@MAIN@	-	deny:push-to-main	git push origin
+push-head-on-main	Bash/run_command	@MAIN@	-	deny:push-to-main	git push origin HEAD
+push-main	Bash/run_command	@WORK@	-	deny:push-to-main	git push origin main
+push-master	Bash/run_command	@WORK@	-	deny:push-to-main	git push origin master
+push-head-to-refs-heads-main	Bash/run_command	@WORK@	-	deny:push-to-main	git push origin HEAD:refs/heads/main
+push-refs-heads-main	Bash/run_command	@WORK@	-	deny:push-to-main	git push origin refs/heads/main
+push-with-dash-c	Bash/run_command	@WORK@	-	deny:push-to-main	git -C . push origin main
+push-delete-main	Bash/run_command	@WORK@	-	deny:push-to-main	git push origin --delete main
+push-chained	Bash/run_command	@WORK@	-	deny:push-to-main	make && git push origin main
+push-in-substitution	Bash/run_command	@WORK@	-	deny:push-to-main	echo $(git push origin main)
+push-after-cd	Bash/run_command	@WORK@	-	deny:push-to-main	cd @MAIN@ && git push
+push-all	Bash/run_command	@WORK@	-	deny:push-all	git push --all origin
+push-mirror	Bash/run_command	@WORK@	-	deny:push-mirror	git push --mirror origin
+force-push	Bash/run_command	@WORK@	-	deny:force-push	git push --force origin feat/maintenance
+force-push-plus-refspec	Bash/run_command	@WORK@	-	deny:force-push	git push origin +feat/maintenance
+force-with-lease	Bash/run_command	@WORK@	-	allow	git push --force-with-lease origin feat/maintenance
+push-tags	Bash/run_command	@WORK@	-	deny:push-tags	git push --tags
+push-follow-tags	Bash/run_command	@WORK@	-	deny:push-tags	git push --follow-tags origin feat/maintenance
+push-tag-refspec	Bash/run_command	@WORK@	-	deny:push-tags	git push origin v0.1.0:refs/tags/v0.1.0
+push-local-tag	Bash/run_command	@WORK@	-	deny:push-tags	git push origin v0.1.0
+reset-hard	Bash/run_command	@WORK@	-	deny:reset-hard	git reset --hard HEAD
+reset-soft	Bash/run_command	@WORK@	-	allow	git reset --soft HEAD
+clean-force-directories	Bash/run_command	@WORK@	-	deny:clean-force	git clean -fdx
+clean-dry-run	Bash/run_command	@WORK@	-	allow	git clean -n
+worktree-remove-force	Bash/run_command	@WORK@	-	deny:worktree-remove-force	git worktree remove --force ../other
+filter-branch	Bash/run_command	@WORK@	-	deny:history-rewrite	git filter-branch --tree-filter true HEAD
+update-ref-delete	Bash/run_command	@WORK@	-	deny:update-ref-delete	git update-ref -d refs/heads/old
+rm-macshot	Bash/run_command	@WORK@	-	deny:rm-protected	rm -rf @MACSHOT@
+rm-macshot-trailing-slash	Bash/run_command	@WORK@	-	deny:rm-protected	rm -rf @MACSHOT@/
+rm-macshot-parent-relative	Bash/run_command	@WORK@	-	deny:rm-protected	rm -rf ../reference
+rm-macshot-file	Bash/run_command	@WORK@	-	deny:rm-protected	rm @MACSHOT@/README.md
+rm-macshot-variable	Bash/run_command	@WORK@	-	deny:rm-protected	rm -rf "$ARIADSHOT_MACSHOT_DIR"
+rm-macshot-when-unset	Bash/run_command	@WORK@	macshot-empty	allow	rm -rf @MACSHOT@
+rm-repository-root	Bash/run_command	@WORK@	-	deny:rm-protected	rm -rf .
+rm-repository-root-glob	Bash/run_command	@WORK@	-	deny:rm-protected	rm -rf *
+rm-repository-root-relative	Bash/run_command	@WORK@/src	-	deny:rm-protected	rm -rf ..
+rm-git-directory	Bash/run_command	@WORK@	-	deny:rm-protected	rm -rf .git
+rm-build-directory	Bash/run_command	@WORK@	-	allow	rm -rf build
+rm-variable-assigned-in-command	Bash/run_command	@WORK@	-	allow	SCRATCH=@TMP@/scratch; rm -rf $SCRATCH
+rm-variable-assigned-to-repository	Bash/run_command	@WORK@	-	deny:rm-protected	TARGET=.; rm -rf $TARGET
+rm-exported-variable	Bash/run_command	@WORK@	-	deny:rm-protected	export TARGET=@MACSHOT@ && rm -rf "$TARGET"
+rm-unset-variable-is-root	Bash/run_command	@WORK@	-	deny:rm-protected	rm -rf $ARIADSHOT_GUARD_TEST_UNSET/
+gh-pr-merge	Bash/run_command	@WORK@	-	deny:gh-merge	gh pr merge 12 --squash
+gh-pr-view	Bash/run_command	@WORK@	-	allow	gh pr view 12
+gh-pr-checks	Bash/run_command	@WORK@	-	allow	gh pr checks 12
+gh-release-create	Bash/run_command	@WORK@	-	deny:gh-release	gh release create v0.1.0
+gh-release-view	Bash/run_command	@WORK@	-	allow	gh release view v0.1.0
+gh-api-merge	Bash/run_command	@WORK@	-	deny:gh-api-write	gh api -X PUT repos/o/r/pulls/12/merge
+gh-api-ruleset-field	Bash/run_command	@WORK@	-	deny:gh-api-write	gh api repos/o/r/rulesets -f name=x
+gh-api-settings	Bash/run_command	@WORK@	-	deny:gh-api-write	gh api --method PATCH repos/o/r -f allow_merge_commit=true
+gh-api-graphql-merge	Bash/run_command	@WORK@	-	deny:gh-api-write	gh api graphql -f query='mutation { mergePullRequest(input: {pullRequestId: "x"}) { clientMutationId } }'
+gh-api-read	Bash/run_command	@WORK@	-	allow	gh api repos/o/r/pulls/12
+gh-api-comment	Bash/run_command	@WORK@	-	allow	gh api repos/o/r/issues/12/comments -f body=done
+gh-repo-edit	Bash/run_command	@WORK@	-	deny:gh-repo-settings	gh repo edit --delete-branch-on-merge
+gh-secret-set	Bash/run_command	@WORK@	-	deny:gh-secrets	gh secret set TOKEN
+gh-ruleset-list	Bash/run_command	@WORK@	-	allow	gh ruleset list
+gh-auth-token	Bash/run_command	@WORK@	-	deny:gh-auth	gh auth token
+gh-auth-status	Bash/run_command	@WORK@	-	allow	gh auth status
+curl-api-write	Bash/run_command	@WORK@	-	deny:github-api-write	curl -X POST https://api.github.com/repos/o/r/merges
+curl-api-read	Bash/run_command	@WORK@	-	allow	curl -s https://api.github.com/repos/o/r
+plain-command	Bash/run_command	@WORK@	-	allow	ls -la && echo done | grep done
+jq-missing-push	Bash/run_command	@WORK@	no-jq	deny:jq-missing	git push origin feat/maintenance
+jq-missing-other-command	Bash/run_command	@WORK@	no-jq	allow	ls
+write-git-directory	Write/write_to_file	@WORK@	-	deny:git-dir	@WORK@/.git/config
+write-git-directory-relative	Edit/write_to_file	@WORK@	-	deny:git-dir	.git/hooks/pre-commit
+write-macshot	Write/write_to_file	@WORK@	-	deny:macshot-readonly	@MACSHOT@/README.md
+write-macshot-relative	Edit/write_to_file	@WORK@	-	deny:macshot-readonly	../reference/macshot/Package.swift
+write-macshot-when-unset	Write/write_to_file	@WORK@	macshot-empty	allow	@MACSHOT@/README.md
+write-source-file	Write/write_to_file	@WORK@	-	allow	src/core/BuildInfo.cpp
+replace-file-content-git-directory	-/replace_file_content	@WORK@	-	deny:git-dir	@WORK@/.git/config
+multi-replace-macshot	MultiEdit/multi_replace_file_content	@WORK@	-	deny:macshot-readonly	@MACSHOT@/README.md
+notebook-git-directory	NotebookEdit/-	@WORK@	-	deny:git-dir	.git/notes.ipynb
+view-file-macshot	-/view_file	@WORK@	-	allow	@MACSHOT@/README.md

@@ -1,0 +1,135 @@
+# SPDX-FileCopyrightText: 2026 The AriadShot Authors
+# SPDX-License-Identifier: GPL-3.0-only
+#
+# The owner gate: the required check "owner-consent" on a pull request's head commit, created only after the owner
+# approves the owner-review environment for that commit (docs/dev/agent-workflow.md, "The owner gate").
+#
+# pull_request_target runs this file as it is on the base branch, never a pull request's copy. The gate checks out
+# nothing, runs no code from the pull request and holds no secrets. Its "inspect" decision is
+# scripts/github/gate-inspect.sh, embedded below verbatim (scripts/check-repo.sh keeps the copies identical and the
+# script is unit-tested); a fork pull request that changes .github/workflows/ gets owner-consent = failure.
+#
+# Every push to the pull request starts a new run that waits for a new approval. The ruleset's required checks are
+# strict, so a head behind main cannot merge; updating it creates a new head and a new approval.
+#
+# GitHub blocks pull_request_target in public repositories by default from 2026-11-02. The repository therefore has an
+# Actions event policy, created by scripts/github/setup-repository.sh and checked by verify-identity.sh owner, that
+# permits pull_request_target for this workflow file only.
+
+name: owner-gate
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  pull-requests: read
+  checks: write
+
+concurrency:
+  group: owner-gate-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  inspect:
+    name: inspect
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Refuse fork pull requests that change workflows
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          PULL_REQUEST: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          gh api --paginate --slurp "repos/$REPOSITORY/pulls/$PULL_REQUEST/files" | jq 'add // []' >"$RUNNER_TEMP/files.json"
+          cat >"$RUNNER_TEMP/gate-inspect.sh" <<'GATE_INSPECT'
+          #!/usr/bin/env bash
+          # SPDX-FileCopyrightText: 2026 The AriadShot Authors
+          # SPDX-License-Identifier: GPL-3.0-only
+          #
+          # The decision of the owner gate's "inspect" job (.github/workflows/owner-gate.yml): a pull request from a fork that
+          # changes anything under .github/workflows/ must not reach the owner's approval, because its changed workflows could
+          # run under a check name the ruleset requires. Such a pull request fails the gate; the owner never approves its
+          # workflow runs and re-creates the wanted change on a maintainer branch.
+          #
+          # Usage: gate-inspect.sh --event EVENT_JSON --files FILES_JSON
+          #   EVENT_JSON  the pull_request_target event payload ($GITHUB_EVENT_PATH)
+          #   FILES_JSON  the pull request's changed files from GET /repos/{owner}/{repo}/pulls/{number}/files, every page
+          #               merged into one JSON array
+          # Prints "gate-inspect: pass" (exit 0) or "gate-inspect: fail: <reason>" (exit 1). Unreadable or incomplete input
+          # fails closed.
+
+          set -uo pipefail
+
+          event=""
+          files=""
+          while [ $# -gt 0 ]; do
+              case "$1" in
+                  --event) event=${2-}; shift 2 ;;
+                  --files) files=${2-}; shift 2 ;;
+                  *) echo "usage: $0 --event EVENT_JSON --files FILES_JSON" >&2; exit 2 ;;
+              esac
+          done
+
+          fail() {
+              printf 'gate-inspect: fail: %s\n' "$1"
+              exit 1
+          }
+
+          [ -r "$event" ] || fail "cannot read the event payload '$event'"
+          [ -r "$files" ] || fail "cannot read the changed-file list '$files'"
+
+          base_repo=$(jq -er '.pull_request.base.repo.full_name' "$event" 2>/dev/null) ||
+              fail "the event payload has no base repository"
+          # A deleted fork has no head repository; it counts as a fork.
+          head_repo=$(jq -r '.pull_request.head.repo.full_name // ""' "$event" 2>/dev/null) ||
+              fail "the event payload cannot be parsed"
+          expected_count=$(jq -er '.pull_request.changed_files' "$event" 2>/dev/null) ||
+              fail "the event payload has no changed-file count"
+
+          jq -e 'type == "array" and all(.[]; (.filename | type) == "string")' "$files" >/dev/null 2>&1 ||
+              fail "the changed-file list is not an array of files"
+          count=$(jq 'length' "$files")
+          if [ "$count" != "$expected_count" ]; then
+              fail "the changed-file list has $count entries but the pull request changes $expected_count files"
+          fi
+
+          workflow_file=$(jq -r '[.[] | .filename, (.previous_filename // empty)
+              | select(startswith(".github/workflows/"))] | first // empty' "$files")
+
+          if [ "$head_repo" != "$base_repo" ] && [ -n "$workflow_file" ]; then
+              fail "fork pull request changes workflows ($workflow_file): do not approve its workflow runs; re-create the change on a maintainer branch"
+          fi
+          echo "gate-inspect: pass"
+          GATE_INSPECT
+          if decision=$(bash "$RUNNER_TEMP/gate-inspect.sh" --event "$GITHUB_EVENT_PATH" --files "$RUNNER_TEMP/files.json"); then
+            echo "$decision"
+            exit 0
+          fi
+          echo "$decision"
+          gh api --method POST "repos/$REPOSITORY/check-runs" \
+            -f name=owner-consent -f head_sha="$HEAD_SHA" -f status=completed -f conclusion=failure \
+            -f "output[title]=The owner gate refused this pull request" -f "output[summary]=$decision" >/dev/null
+          exit 1
+
+  owner-approval:
+    name: owner-approval
+    needs: inspect
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    # Waits until the owner approves this deployment; the agent token cannot approve it.
+    environment: owner-review
+    steps:
+      - name: Record the owner's consent on the head commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          gh api --method POST "repos/$REPOSITORY/check-runs" \
+            -f name=owner-consent -f head_sha="$HEAD_SHA" -f status=completed -f conclusion=success \
+            -f "output[title]=The owner approved this commit" \
+            -f "output[summary]=The owner approved the owner-review deployment for $HEAD_SHA." >/dev/null
+          echo "owner-consent recorded on $HEAD_SHA"

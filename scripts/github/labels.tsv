@@ -1,0 +1,61 @@
+# SPDX-FileCopyrightText: 2026 The AriadShot Authors
+# SPDX-License-Identifier: GPL-3.0-only
+#
+# Labels created by setup-repository.sh: name TAB colour (hex, no #) TAB description.
+type:feat	1d76db	A new feature
+type:fix	1d76db	A bug fix
+type:perf	1d76db	A performance improvement
+type:refactor	1d76db	Code change without behaviour change
+type:test	1d76db	Tests only
+type:docs	1d76db	Documentation only
+type:build	1d76db	Build system or dependencies
+type:ci	1d76db	Continuous integration
+type:chore	1d76db	Maintenance
+type:security	1d76db	Security fix or hardening
+area:core	c5def5	Changes in core
+area:render	c5def5	Changes in render
+area:ui	c5def5	Changes in ui
+area:platform	c5def5	Changes in platform
+area:hosts	c5def5	Changes in hosts
+area:windows	c5def5	Changes in windows
+area:wayland	c5def5	Changes in wayland
+area:portal	c5def5	Changes in portal
+area:x11	c5def5	Changes in x11
+area:macos	c5def5	Changes in macos
+area:media	c5def5	Changes in media
+area:ml	c5def5	Changes in ml
+area:net	c5def5	Changes in net
+area:app	c5def5	Changes in app
+area:cli	c5def5	Changes in cli
+area:parity	c5def5	Changes in parity
+area:tests	c5def5	Changes in tests
+area:build	c5def5	Changes in build
+area:ci	c5def5	Changes in ci
+area:docs	c5def5	Changes in docs
+area:packaging	c5def5	Changes in packaging
+area:i18n	c5def5	Changes in i18n
+domain:shot	fbca04	Screenshot parity lines
+domain:rec	fbca04	Recording parity lines
+domain:studio	fbca04	Studio parity lines
+domain:release	fbca04	Release, update and packaging lines
+platform:hyprland	5319e7	Behaviour on hyprland
+platform:wlroots	5319e7	Behaviour on wlroots
+platform:kde	5319e7	Behaviour on kde
+platform:x11	5319e7	Behaviour on x11
+platform:gnome	5319e7	Behaviour on gnome
+platform:macos	5319e7	Behaviour on macos
+gate:G1	b60205	Work for gate G1
+gate:G2	b60205	Work for gate G2
+gate:G3	b60205	Work for gate G3
+gate:G4	b60205	Work for gate G4
+gate:G5	b60205	Work for gate G5
+gate:G6	b60205	Work for gate G6
+gate:G7	b60205	Work for gate G7
+gate:G8	b60205	Work for gate G8
+status:ready	0e8a16	Ready to be picked up
+status:in-progress	0e8a16	Someone is working on it
+status:blocked	d93f0b	Blocked by another item
+status:needs-owner	d93f0b	Waits for the owner
+size/exception	e99695	Over the 500-line limit, allowed by the owner
+golden-update	e99695	Adds or changes golden images; owner review required
+deviation	e99695	Adds or changes a deviation-register entry

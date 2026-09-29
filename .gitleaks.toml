@@ -1,0 +1,8 @@
+# SPDX-FileCopyrightText: 2026 The AriadShot Authors
+# SPDX-License-Identifier: GPL-3.0-only
+#
+# The default rule set, with no allowlisted paths: allowlisting fixtures would hide a leaked key.
+title = "AriadShot gitleaks configuration"
+
+[extend]
+useDefault = true

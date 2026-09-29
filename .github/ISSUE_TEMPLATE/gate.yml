@@ -1,0 +1,45 @@
+# SPDX-FileCopyrightText: 2026 The AriadShot Authors
+# SPDX-License-Identifier: GPL-3.0-only
+name: Gate
+description: A go/no-go gate that proves or retires an architecture assumption before feature work.
+labels: ["status:ready"]
+body:
+  - type: input
+    id: gate
+    attributes:
+      label: Gate
+      description: The gate identifier and name from docs/spec/14-gates-and-milestones.md.
+      placeholder: G2 Capture
+    validations:
+      required: true
+  - type: textarea
+    id: proves
+    attributes:
+      label: What it proves
+      description: The assumption under test and the decision that depends on it.
+    validations:
+      required: true
+  - type: textarea
+    id: pass-criteria
+    attributes:
+      label: Pass criteria
+      description: The measurable criteria, copied from the specification, one per line.
+    validations:
+      required: true
+  - type: textarea
+    id: fallback
+    attributes:
+      label: If it fails
+      description: The predefined fallback and its cost.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment and owner approvals
+      description: Test tier, host packages to install, live-session or Mac runs that need the owner.
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Outcome record
+      description: The ADR that records the outcome and the measurements that justify it.

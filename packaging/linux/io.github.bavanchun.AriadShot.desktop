@@ -1,0 +1,12 @@
+# SPDX-FileCopyrightText: 2026 The AriadShot Authors
+# SPDX-License-Identifier: GPL-3.0-only
+[Desktop Entry]
+Type=Application
+Name=AriadShot
+GenericName=Screenshot Tool
+Comment=Capture, annotate and record the screen
+Exec=ariadshot-daemon
+Icon=applets-screenshooter
+Terminal=false
+Categories=Graphics;Utility;
+StartupNotify=false

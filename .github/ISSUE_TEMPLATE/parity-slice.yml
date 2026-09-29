@@ -1,0 +1,45 @@
+# SPDX-FileCopyrightText: 2026 The AriadShot Authors
+# SPDX-License-Identifier: GPL-3.0-only
+name: Parity slice
+description: A named set of parity-ledger lines delivered end to end with the tests that prove them.
+labels: ["status:ready"]
+body:
+  - type: textarea
+    id: behaviour
+    attributes:
+      label: Behaviour
+      description: What the user can do when the slice is done, in MacShot's terms.
+    validations:
+      required: true
+  - type: textarea
+    id: ledger-lines
+    attributes:
+      label: Ledger lines
+      description: The parity-ledger line IDs this slice delivers, one per line.
+      placeholder: SH-08.capture-area
+    validations:
+      required: true
+  - type: textarea
+    id: macshot
+    attributes:
+      label: MacShot references
+      description: The MacShot source lines at b4d4f3a that define the behaviour, as macshot/<path>:<line>@b4d4f3a.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance tests
+      description: The tests to add, the MacShot values they assert, and the evidence class of each line (corpus golden, trace parity, defaults test, frame-timed measurement).
+    validations:
+      required: true
+  - type: textarea
+    id: write-set
+    attributes:
+      label: Write set
+      description: The directories this slice changes; shared files (module CMakeLists.txt, cmake/, scripts/, .github/) need the manager.
+  - type: textarea
+    id: deviations
+    attributes:
+      label: Deviations
+      description: Registered deviations this slice relies on or adds (DEV-nn).

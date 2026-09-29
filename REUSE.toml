@@ -1,0 +1,26 @@
+# SPDX-FileCopyrightText: 2026 The AriadShot Authors
+# SPDX-License-Identifier: GPL-3.0-only
+#
+# Licence information for files that cannot carry an SPDX header. Every other file has its own header.
+version = 1
+
+[[annotations]]
+path = [
+    "tests/golden/**",
+    "**.json",
+    "**.jsonl",
+    ".github/pull_request_template.md",
+]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 The AriadShot Authors"
+SPDX-License-Identifier = "GPL-3.0-only"
+
+# These documents quote SPDX tags in their text; "override" keeps REUSE from reading those quotes as licence tags.
+[[annotations]]
+path = [
+    "docs/prd.md",
+    "docs/spec/13-build-ci-release.md",
+]
+precedence = "override"
+SPDX-FileCopyrightText = "2026 The AriadShot Authors"
+SPDX-License-Identifier = "GPL-3.0-only"
