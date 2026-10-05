@@ -74,6 +74,7 @@ add_subdirectory(src)
 if(BUILD_TESTING)
     enable_testing()
     add_subdirectory(tests)
+    add_subdirectory(tools)
 endif()
 
 if(UNIX AND NOT APPLE)

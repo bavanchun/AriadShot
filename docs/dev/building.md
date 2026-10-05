@@ -41,6 +41,7 @@ download belongs to a separate acquisition step
 
 The `dev`, `asan` and `release` test presets skip the labels `wayland`, `nested-hyprland` and `live`. Run one test with
 `ctest --preset dev -R <name>`, and list them with `ctest --preset dev -N`.
+Golden reviews can compare images with `build/dev/tools/imgdiff/ariadshot-imgdiff --class exact actual.png expected.png`.
 
 Local settings that must not change outputs for others (a compiler launcher such as ccache, a faster linker, a Qt
 prefix) go into your own `CMakeUserPresets.json`, which git ignores, or into environment variables such as
