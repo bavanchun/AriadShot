@@ -10,6 +10,7 @@
 #include <QString>
 #include <QtGlobal>
 
+#include <memory>
 #include <optional>
 
 class QEvent;
@@ -30,15 +31,19 @@ class ViewObject {
     Q_DISABLE_COPY_MOVE(ViewObject)
 
     [[nodiscard]] virtual QRectF geometry() const { return m_geometry; }
-    // Moves or resizes the view; the old and the new area are damaged.
+    // Moves or resizes the view; what it painted and what it paints now are damaged.
     void setGeometry(QRectF geometry);
+    // The area paint() draws in: the geometry, unless the view paints beyond it (a border, a shadow). The root clips
+    // paint() to it and damages it when the view is added, removed or moved. A view whose reach changes without a
+    // move reports the old and the new area with update().
+    [[nodiscard]] virtual QRectF paintBounds() const { return geometry(); }
 
-    // Paints into the chrome layer. The root calls it for every repaint, clipped to the damage, so a view may paint
-    // outside geometry() (a border, a shadow); whoever changes such pixels reports them with update().
+    // Paints into the chrome layer, within paintBounds(). The root calls it for every repaint, clipped to the damage.
+    // It must not add or remove views.
     virtual void paint(QPainter& painter) = 0;
 
     // The view object that receives a pointer event at the point: this one, a descendant, or nullptr to let the view
-    // behind take it. The default accepts the points inside geometry().
+    // behind take it. It must not change the tree. The default accepts the points inside geometry().
     virtual ViewObject* hitTest(QPointF point);
     virtual void hoverChanged(bool /*hovered*/) {}
     // A press makes the view that hitTest() chose the owner of the pointer until every button is released: its moves
@@ -73,6 +78,9 @@ class ViewObject {
     QRectF m_geometry;
     ViewRoot* m_root = nullptr;
     QAccessible::Id m_accessibleId = 0;
+    // Lets whoever points at a view without owning it (the root's owners of pointer, focus and input method, and the
+    // hovered view) see that it is gone: they hold a weak reference and never call a view whose token has expired.
+    std::shared_ptr<void> m_lifetime = std::make_shared<char>();
 };
 
 } // namespace ariadshot::ui

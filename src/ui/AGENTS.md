@@ -19,9 +19,12 @@ SPDX-License-Identifier: GPL-3.0-only
 - **Accessible by construction.** Every chrome view object gives `accessibleName()` (through `tr()`) and
   `accessibleRole()`; a view with more to expose, such as text or a value, overrides `accessible()` and reports
   `accessibleParent()` and `screenRect()`. Qt wants screen coordinates, so a view never reports surface points.
-- **Input state follows the root.** A press makes its view the pointer owner until every button is released, and a
-  view that answers the input method's queries is the input method owner (`inputMethodQuery()`); neither is the
-  hovered view, which a callback may remove from the tree at any time.
+- **Input state follows the root, and the root never calls a destroyed view.** A press makes its view the pointer
+  owner until every button is released; removing or destroying the owner, or its holder, cancels the gesture and the
+  rest of it goes to no view. A view that answers the input method's queries is the input method owner
+  (`inputMethodQuery()`). A holder may destroy a descendant at any time, so the root checks before it calls one.
+- **Paint within `paintBounds()`.** The root clips each view to it, and adding, moving and removing the view damages
+  it. A view that draws a shadow or a border beyond its geometry overrides it.
 - **One coordinate space.** Geometry, event positions, damage and painting are in the surface's points, top-left
   origin, y down. Damage is rounded outwards to whole points.
 - **Tests** run offscreen in `tests/unit/ui/` and assert behaviour. Appearance values are ported from MacShot with

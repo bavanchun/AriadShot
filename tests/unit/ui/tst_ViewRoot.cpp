@@ -22,6 +22,7 @@
 
 #include <functional>
 #include <memory>
+#include <ranges>
 #include <vector>
 
 using namespace Qt::StringLiterals;
@@ -41,10 +42,17 @@ using Events = std::vector<QEvent::Type>;
 class TestView final : public ViewObject {
   public:
     explicit TestView(QRectF area, QString viewName = {}) : name(std::move(viewName)) { setGeometry(area); }
+    ~TestView() override {
+        if (onDestroy) {
+            onDestroy();
+        }
+    }
 
+    QRectF paintBounds() const override { return geometry().adjusted(-shadow, -shadow, shadow, shadow); }
     void paint(QPainter& painter) override {
         ++paintCount;
-        painter.fillRect(paintArea.isNull() ? geometry() : paintArea, color);
+        const qreal reach = shadow + overdraw;
+        painter.fillRect(geometry().adjusted(-reach, -reach, reach, reach), color);
     }
     ViewObject* hitTest(QPointF point) override { return passThrough ? nullptr : ViewObject::hitTest(point); }
     void hoverChanged(bool hovered) override {
@@ -57,6 +65,9 @@ class TestView final : public ViewObject {
         events.push_back(event.type());
         if (event.isSinglePointEvent()) {
             positions.push_back(static_cast<const QSinglePointEvent&>(event).position());
+        }
+        if (onEvent) {
+            onEvent(event);
         }
     }
     void inputMethodQuery(QInputMethodQueryEvent& query) override {
@@ -73,7 +84,8 @@ class TestView final : public ViewObject {
     QAccessible::Role role = QAccessible::PushButton;
     std::optional<Qt::CursorShape> cursor = Qt::CrossCursor;
     QColor color = Qt::red;
-    QRectF paintArea; // where paint() draws; the geometry when null
+    qreal shadow = 0;   // how far beyond its geometry the view paints, and says so in paintBounds()
+    qreal overdraw = 0; // how far beyond paintBounds() it paints without saying so
     QString surroundingText;
     int cursorPosition = 0;
     bool passThrough = false;
@@ -83,23 +95,48 @@ class TestView final : public ViewObject {
     std::vector<QPointF> positions;
     Qt::InputMethodQueries queried;
     std::function<void(bool)> onHover;
+    std::function<void(const QEvent&)> onEvent;
+    std::function<void()> onDestroy;
 };
 
-// A view object whose hit test answers with a descendant that the root does not hold.
-class ParentView final : public ViewObject {
+// A view object that holds children, as a chrome container does: hitTest() hands out the child under the point, and
+// the group keeps the child alive.
+class GroupView final : public ViewObject {
   public:
-    ParentView(QRectF area, ViewObject& hitChild) : child(&hitChild) { setGeometry(area); }
+    explicit GroupView(QRectF area, QString viewName = {}) : name(std::move(viewName)) { setGeometry(area); }
 
+    TestView& addNested(QRectF area, QString childName = {}) {
+        return static_cast<TestView&>(*nested.emplace_back(std::make_unique<TestView>(area, std::move(childName))));
+    }
     void paint(QPainter&) override {}
-    ViewObject* hitTest(QPointF point) override { return geometry().contains(point) ? child : nullptr; }
-    QString accessibleName() const override { return {}; }
-    QAccessible::Role accessibleRole() const override { return QAccessible::Grouping; }
+    ViewObject* hitTest(QPointF point) override {
+        for (const auto& view : std::views::reverse(nested)) {
+            if (ViewObject* hit = view->hitTest(point)) {
+                return hit;
+            }
+        }
+        return nullptr;
+    }
+    QString accessibleName() const override { return name; }
+    QAccessible::Role accessibleRole() const override { return QAccessible::ToolBar; }
 
-    ViewObject* child;
+    QString name;
+    std::vector<std::unique_ptr<ViewObject>> nested; // back to front; erase one to destroy it while the group stays
 };
 
 TestView& addView(ViewRoot& root, QRectF area) {
     return static_cast<TestView&>(root.addView(std::make_unique<TestView>(area)));
+}
+
+GroupView& addGroup(ViewRoot& root, QRectF area, QString name = {}) {
+    return static_cast<GroupView&>(root.addView(std::make_unique<GroupView>(area, std::move(name))));
+}
+
+// A view that paints 10 points beyond its geometry and declares that reach, as a view with a drop shadow would.
+std::unique_ptr<TestView> makeShadowed(QRectF area) {
+    auto view = std::make_unique<TestView>(area);
+    view->shadow = 10;
+    return view;
 }
 
 void mouse(ViewRoot& root, QEvent::Type type, QPointF position) {
@@ -182,8 +219,20 @@ class ViewRootTest : public QObject {
     void pointerEventsGoToTheFrontmostViewUnderThePointer();
     void pointerOwnerReceivesTheDragAndReleaseOutsideItsBounds();
     void moveWithNoButtonHeldEndsAStaleDrag();
-    void removingThePointerOwnerEndsTheDrag();
-    void removingTheHolderOfAPointerOwnerEndsTheDrag();
+    void pressAfterALostReleaseStartsANewGesture();
+    void aSecondButtonGoesToThePointerOwner();
+    void removingThePointerOwnerCancelsTheGesture();
+    void removingTheHolderOfAPointerOwnerCancelsTheGesture();
+    void aViewRemovingItselfOnPressCancelsTheRestOfTheGesture();
+    void aViewRemovingItselfOnReleaseLeavesTheNextGestureAlone();
+    void aCancelledGestureLastsUntilTheLastButtonIsReleased();
+    void removingAnotherViewLeavesTheGestureAlone();
+    void aMoveWithNoButtonHeldEndsACancelledGesture();
+    void aPressAfterALostReleaseEndsACancelledGesture();
+    void descendantDestroyedByItsHolderMidDragCancelsTheGesture();
+    void descendantDestroyedWhileThePointerIsElsewhereCancelsTheGesture();
+    void hoveredDescendantDestroyedByItsHolderIsNotNotified();
+    void focusAndInputMethodOwnersDestroyedByTheirHolderReceiveNothing();
     void passThroughViewLetsTheViewBehindReceiveTheEvent();
     void wheelAndTabletEventsRouteLikeMouseEvents();
     void hoverFollowsThePointer();
@@ -199,6 +248,10 @@ class ViewRootTest : public QObject {
     void chromeBufferCoversTheSurfaceAtFractionalScale();
     void chromeLayerIsRepaintedOverTheDamageOnly();
     void chromeIsRepaintedOverViewsPaintingOutsideTheirGeometry();
+    void addedViewDamagesItsShadow();
+    void movedViewDamagesItsOldAndNewShadow();
+    void removedViewDamagesItsShadow();
+    void viewsPaintOnlyWithinTheirDeclaredBounds();
     void cursorFollowsTheViewUnderThePointer();
     void keyboardModeIsReported();
     void viewObjectExposesAccessibleNameAndRole();
@@ -254,32 +307,244 @@ void ViewRootTest::moveWithNoButtonHeldEndsAStaleDrag() {
     QCOMPARE(other.events, Events{QEvent::MouseMove});
 }
 
-void ViewRootTest::removingThePointerOwnerEndsTheDrag() {
+// A real press goes down after a release that never arrived: the old gesture is over and the press belongs to the view
+// under the pointer.
+void ViewRootTest::pressAfterALostReleaseStartsANewGesture() {
+    ViewRoot root;
+    TestView& first = addView(root, {0, 0, 50, 50});
+    TestView& second = addView(root, {60, 0, 50, 50});
+
+    mouse(root, QEvent::MouseButtonPress, {10, 10});
+    mouse(root, QEvent::MouseButtonPress, {70, 10}); // no release and no move in between
+
+    QCOMPARE(first.events, Events{QEvent::MouseButtonPress});
+    QCOMPARE(second.events, Events{QEvent::MouseButtonPress});
+}
+
+void ViewRootTest::aSecondButtonGoesToThePointerOwner() {
+    ViewRoot root;
+    TestView& first = addView(root, {0, 0, 50, 50});
+    TestView& second = addView(root, {60, 0, 50, 50});
+
+    mouse(root, QEvent::MouseButtonPress, {10, 10});
+    const QPointF over(70, 10);
+    root.dispatch(QMouseEvent(QEvent::MouseButtonPress, over, over, Qt::RightButton, Qt::LeftButton | Qt::RightButton,
+                              Qt::NoModifier));
+
+    QCOMPARE(first.events, (Events{QEvent::MouseButtonPress, QEvent::MouseButtonPress}));
+    QVERIFY(second.events.empty());
+}
+
+// The view that took the press is gone, so nothing may receive the rest of the gesture: the view underneath never saw
+// the press and must not see a drag or a release (cf. macshot/UI/Toolbar/ToolbarButtonView.swift:268-295@b4d4f3a, where
+// a drag and a release belong to the view that got the press).
+void ViewRootTest::removingThePointerOwnerCancelsTheGesture() {
     ViewRoot root;
     TestView& behind = addView(root, {0, 0, 100, 100});
     TestView& owner = addView(root, {10, 10, 20, 20});
 
     mouse(root, QEvent::MouseButtonPress, {15, 15});
     const std::unique_ptr<ViewObject> removed = root.removeView(owner);
-    mouse(root, QEvent::MouseButtonRelease, {15, 15});
+    drag(root, {50, 50});
+    drag(root, {60, 60});
+    mouse(root, QEvent::MouseButtonRelease, {60, 60});
 
     QCOMPARE(owner.events, Events{QEvent::MouseButtonPress});
-    QCOMPARE(behind.events, Events{QEvent::MouseButtonRelease});
+    QVERIFY(behind.events.empty());
+
+    mouse(root, QEvent::MouseButtonPress, {50, 50});
+    mouse(root, QEvent::MouseButtonRelease, {50, 50});
+    QCOMPARE(behind.events, (Events{QEvent::MouseButtonPress, QEvent::MouseButtonRelease}));
 }
 
-void ViewRootTest::removingTheHolderOfAPointerOwnerEndsTheDrag() {
+void ViewRootTest::removingTheHolderOfAPointerOwnerCancelsTheGesture() {
     ViewRoot root;
     TestView& behind = addView(root, {0, 0, 100, 100});
-    TestView child({0, 0, 0, 0});
-    ViewObject& holder = root.addView(std::make_unique<ParentView>(QRectF(10, 10, 20, 20), child));
+    GroupView& holder = addGroup(root, {10, 10, 20, 20});
+    TestView& child = holder.addNested({10, 10, 20, 20});
 
     mouse(root, QEvent::MouseButtonPress, {15, 15});
     const std::unique_ptr<ViewObject> removed = root.removeView(holder);
     drag(root, {70, 70});
+    mouse(root, QEvent::MouseButtonRelease, {70, 70});
 
     QCOMPARE(child.events, Events{QEvent::MouseButtonPress});
     QCOMPARE(child.hovers, (std::vector<bool>{true, false}));
+    QVERIFY(behind.events.empty());
+}
+
+void ViewRootTest::aViewRemovingItselfOnPressCancelsTheRestOfTheGesture() {
+    ViewRoot root;
+    TestView& behind = addView(root, {0, 0, 100, 100});
+    TestView& owner = addView(root, {10, 10, 20, 20});
+    std::unique_ptr<ViewObject> removed;
+    owner.onEvent = [&](const QEvent& event) {
+        if (event.type() == QEvent::MouseButtonPress && !removed) {
+            removed = root.removeView(owner);
+        }
+    };
+
+    mouse(root, QEvent::MouseButtonPress, {15, 15});
+    drag(root, {50, 50});
+    mouse(root, QEvent::MouseButtonRelease, {50, 50});
+
+    QVERIFY(removed != nullptr);
+    QCOMPARE(owner.events, Events{QEvent::MouseButtonPress});
+    QVERIFY(behind.events.empty());
+}
+
+// The release has already ended the gesture when the view goes, so the next gesture is not touched.
+void ViewRootTest::aViewRemovingItselfOnReleaseLeavesTheNextGestureAlone() {
+    ViewRoot root;
+    TestView& behind = addView(root, {0, 0, 100, 100});
+    TestView& owner = addView(root, {10, 10, 20, 20});
+    std::unique_ptr<ViewObject> removed;
+    owner.onEvent = [&](const QEvent& event) {
+        if (event.type() == QEvent::MouseButtonRelease && !removed) {
+            removed = root.removeView(owner);
+        }
+    };
+
+    mouse(root, QEvent::MouseButtonPress, {15, 15});
+    mouse(root, QEvent::MouseButtonRelease, {15, 15});
+    mouse(root, QEvent::MouseButtonPress, {50, 50});
+    mouse(root, QEvent::MouseButtonRelease, {50, 50});
+
+    QVERIFY(removed != nullptr);
+    QCOMPARE(owner.events, (Events{QEvent::MouseButtonPress, QEvent::MouseButtonRelease}));
+    QCOMPARE(behind.events, (Events{QEvent::MouseButtonPress, QEvent::MouseButtonRelease}));
+}
+
+void ViewRootTest::aCancelledGestureLastsUntilTheLastButtonIsReleased() {
+    ViewRoot root;
+    TestView& behind = addView(root, {0, 0, 100, 100});
+    TestView& owner = addView(root, {10, 10, 20, 20});
+    const QPointF at(15, 15);
+    const auto button = [&](QEvent::Type type, Qt::MouseButton changed, Qt::MouseButtons held) {
+        root.dispatch(QMouseEvent(type, at, at, changed, held, Qt::NoModifier));
+    };
+
+    button(QEvent::MouseButtonPress, Qt::LeftButton, Qt::LeftButton);
+    button(QEvent::MouseButtonPress, Qt::RightButton, Qt::LeftButton | Qt::RightButton);
+    const std::unique_ptr<ViewObject> removed = root.removeView(owner);
+    button(QEvent::MouseButtonRelease, Qt::RightButton, Qt::LeftButton); // the left button is still down
+    drag(root, {50, 50});
+    button(QEvent::MouseButtonRelease, Qt::LeftButton, Qt::NoButton);
+
+    QVERIFY(behind.events.empty());
+    mouse(root, QEvent::MouseButtonPress, {50, 50});
+    QCOMPARE(behind.events, Events{QEvent::MouseButtonPress});
+}
+
+void ViewRootTest::removingAnotherViewLeavesTheGestureAlone() {
+    ViewRoot root;
+    TestView& button = addView(root, {0, 0, 50, 50});
+    TestView& other = addView(root, {60, 0, 50, 50});
+    GroupView& holder = addGroup(root, {0, 60, 50, 40});
+    TestView& child = holder.addNested({0, 60, 10, 10});
+
+    mouse(root, QEvent::MouseButtonPress, {10, 10});
+    const std::unique_ptr<ViewObject> removedView = root.removeView(other);
+    const std::unique_ptr<ViewObject> removedHolder = root.removeView(holder);
+    drag(root, {70, 10});
+    mouse(root, QEvent::MouseButtonRelease, {70, 10});
+
+    QCOMPARE(button.events, (Events{QEvent::MouseButtonPress, QEvent::MouseMove, QEvent::MouseButtonRelease}));
+    QVERIFY(child.events.empty());
+}
+
+// The release of a cancelled gesture can be lost like any other: a move with no button held ends it.
+void ViewRootTest::aMoveWithNoButtonHeldEndsACancelledGesture() {
+    ViewRoot root;
+    TestView& behind = addView(root, {0, 0, 100, 100});
+    TestView& owner = addView(root, {10, 10, 20, 20});
+
+    mouse(root, QEvent::MouseButtonPress, {15, 15});
+    const std::unique_ptr<ViewObject> removed = root.removeView(owner);
+    mouse(root, QEvent::MouseMove, {50, 50});
+
     QCOMPARE(behind.events, Events{QEvent::MouseMove});
+}
+
+void ViewRootTest::aPressAfterALostReleaseEndsACancelledGesture() {
+    ViewRoot root;
+    TestView& behind = addView(root, {0, 0, 100, 100});
+    TestView& owner = addView(root, {10, 10, 20, 20});
+
+    mouse(root, QEvent::MouseButtonPress, {15, 15});
+    const std::unique_ptr<ViewObject> removed = root.removeView(owner);
+    mouse(root, QEvent::MouseButtonPress, {50, 50}); // no release and no move in between
+
+    QCOMPARE(behind.events, Events{QEvent::MouseButtonPress});
+}
+
+// hitTest() may hand out a view the holder owns and can destroy at any time. The root must not call a view that is
+// gone: the gesture is cancelled, and the next one reaches whatever is under the pointer then.
+void ViewRootTest::descendantDestroyedByItsHolderMidDragCancelsTheGesture() {
+    ViewRoot root;
+    TestView& behind = addView(root, {0, 0, 100, 100});
+    GroupView& holder = addGroup(root, {10, 10, 40, 40});
+    holder.addNested({10, 10, 20, 20});
+
+    mouse(root, QEvent::MouseButtonPress, {15, 15});
+    holder.nested.clear();
+    drag(root, {70, 70});
+    mouse(root, QEvent::MouseButtonRelease, {70, 70});
+
+    QVERIFY(behind.events.empty());
+    mouse(root, QEvent::MouseButtonPress, {15, 15});
+    mouse(root, QEvent::MouseButtonRelease, {15, 15});
+    QCOMPARE(behind.events, (Events{QEvent::MouseButtonPress, QEvent::MouseButtonRelease}));
+}
+
+// The pointer is over another view when the holder destroys the owner, so only the owner itself refers to it.
+void ViewRootTest::descendantDestroyedWhileThePointerIsElsewhereCancelsTheGesture() {
+    ViewRoot root;
+    TestView& behind = addView(root, {0, 0, 100, 100});
+    GroupView& holder = addGroup(root, {10, 10, 40, 40});
+    holder.addNested({10, 10, 20, 20});
+
+    mouse(root, QEvent::MouseButtonPress, {15, 15});
+    drag(root, {80, 80});
+    holder.nested.clear();
+    drag(root, {85, 85});
+    mouse(root, QEvent::MouseButtonRelease, {85, 85});
+
+    QVERIFY(behind.events.empty());
+    mouse(root, QEvent::MouseButtonPress, {85, 85});
+    QCOMPARE(behind.events, Events{QEvent::MouseButtonPress});
+}
+
+void ViewRootTest::hoveredDescendantDestroyedByItsHolderIsNotNotified() {
+    ViewRoot root;
+    TestView& behind = addView(root, {0, 0, 100, 100});
+    GroupView& holder = addGroup(root, {10, 10, 40, 40});
+    TestView& child = holder.addNested({10, 10, 20, 20});
+    mouse(root, QEvent::MouseMove, {15, 15});
+    QCOMPARE(child.hovers, std::vector<bool>{true});
+
+    holder.nested.clear();
+    mouse(root, QEvent::MouseMove, {16, 16});
+
+    QCOMPARE(behind.hovers, std::vector<bool>{true});
+    mouse(root, QEvent::MouseMove, {500, 500});
+    QCOMPARE(behind.hovers, (std::vector<bool>{true, false}));
+}
+
+void ViewRootTest::focusAndInputMethodOwnersDestroyedByTheirHolderReceiveNothing() {
+    ViewRoot root;
+    GroupView& holder = addGroup(root, {10, 10, 40, 40});
+    TestView& child = holder.addNested({10, 10, 20, 20});
+    root.setFocusOwner(&child);
+    root.setInputMethodOwner(&child);
+
+    holder.nested.clear();
+    root.dispatch(QKeyEvent(QEvent::KeyPress, Qt::Key_A, Qt::NoModifier));
+    root.dispatch(QInputMethodEvent(u"a"_s, {}));
+    QInputMethodQueryEvent query(Qt::ImEnabled);
+    root.inputMethodQuery(query);
+
+    QCOMPARE(query.value(Qt::ImEnabled), QVariant(false));
 }
 
 void ViewRootTest::passThroughViewLetsTheViewBehindReceiveTheEvent() {
@@ -546,16 +811,78 @@ void ViewRootTest::chromeLayerIsRepaintedOverTheDamageOnly() {
 void ViewRootTest::chromeIsRepaintedOverViewsPaintingOutsideTheirGeometry() {
     ViewRoot root;
     root.resize({100, 100}, 1.0);
-    TestView& view = addView(root, {40, 40, 20, 20});
-    view.paintArea = {10, 40, 20, 20};
+    TestView& view = static_cast<TestView&>(root.addView(makeShadowed({40, 40, 20, 20})));
     (void)root.takeDamage();
     const QImage& chrome = *root.presentationLayers().back();
-    QCOMPARE(chrome.pixelColor(15, 45), QColor(Qt::red));
+    QCOMPARE(chrome.pixelColor(32, 50), QColor(Qt::red));
 
-    view.update({10, 40, 20, 20});
+    view.update({30, 40, 10, 20});
     (void)root.takeDamage();
 
-    QCOMPARE(chrome.pixelColor(15, 45), QColor(Qt::red));
+    QCOMPARE(chrome.pixelColor(32, 50), QColor(Qt::red));
+}
+
+// What a view paints beyond its geometry has to appear when the view does, move with it and go when it goes: the damage
+// of these changes is the view's paintBounds(), not just its geometry.
+void ViewRootTest::addedViewDamagesItsShadow() {
+    ViewRoot root;
+    root.resize({100, 100}, 1.0);
+    (void)root.takeDamage();
+
+    root.addView(makeShadowed({40, 40, 20, 20}));
+
+    QCOMPARE(root.takeDamage(), QRegion(30, 30, 40, 40));
+    const QImage& chrome = *root.presentationLayers().back();
+    QCOMPARE(chrome.pixelColor(32, 50), QColor(Qt::red));
+    QCOMPARE(chrome.pixelColor(50, 50), QColor(Qt::red));
+}
+
+void ViewRootTest::movedViewDamagesItsOldAndNewShadow() {
+    ViewRoot root;
+    root.resize({100, 100}, 1.0);
+    TestView& view = static_cast<TestView&>(root.addView(makeShadowed({40, 40, 20, 20})));
+    (void)root.takeDamage();
+    const QImage& chrome = *root.presentationLayers().back();
+    QCOMPARE(chrome.pixelColor(65, 65), QColor(Qt::red));
+
+    view.setGeometry({10, 10, 20, 20});
+    (void)root.takeDamage();
+
+    QCOMPARE(chrome.pixelColor(65, 65).alpha(), 0); // the old shadow is gone
+    QCOMPARE(chrome.pixelColor(45, 45).alpha(), 0);
+    QCOMPARE(chrome.pixelColor(5, 5), QColor(Qt::red)); // the new one is there, outside the new geometry
+    QCOMPARE(chrome.pixelColor(20, 20), QColor(Qt::red));
+}
+
+void ViewRootTest::removedViewDamagesItsShadow() {
+    ViewRoot root;
+    root.resize({100, 100}, 1.0);
+    TestView& view = static_cast<TestView&>(root.addView(makeShadowed({40, 40, 20, 20})));
+    (void)root.takeDamage();
+    const QImage& chrome = *root.presentationLayers().back();
+    QCOMPARE(chrome.pixelColor(65, 65), QColor(Qt::red));
+
+    const std::unique_ptr<ViewObject> removed = root.removeView(view);
+
+    QCOMPARE(root.takeDamage(), QRegion(30, 30, 40, 40));
+    QCOMPARE(chrome.pixelColor(65, 65).alpha(), 0);
+    QCOMPARE(chrome.pixelColor(45, 45).alpha(), 0);
+}
+
+// The root clips each view to its declared bounds, so a view that paints more than it declared cannot leave pixels that
+// no damage will ever clear.
+void ViewRootTest::viewsPaintOnlyWithinTheirDeclaredBounds() {
+    ViewRoot root;
+    root.resize({100, 100}, 1.0);
+    std::unique_ptr<TestView> view = makeShadowed({40, 40, 20, 20});
+    view->overdraw = 5;
+    root.addView(std::move(view));
+
+    (void)root.takeDamage();
+
+    const QImage& chrome = *root.presentationLayers().back();
+    QCOMPARE(chrome.pixelColor(32, 50), QColor(Qt::red)); // declared: the shadow
+    QCOMPARE(chrome.pixelColor(27, 50).alpha(), 0);       // not declared: five points further out
 }
 
 void ViewRootTest::cursorFollowsTheViewUnderThePointer() {

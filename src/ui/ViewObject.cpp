@@ -47,9 +47,9 @@ ViewObject::~ViewObject() {
 }
 
 void ViewObject::setGeometry(QRectF geometry) {
-    update(m_geometry);
+    update(paintBounds());
     m_geometry = geometry;
-    update(m_geometry);
+    update(paintBounds());
 }
 
 ViewObject* ViewObject::hitTest(QPointF point) { return geometry().contains(point) ? this : nullptr; }

@@ -55,6 +55,12 @@ class ViewRoot::Accessible final : public QAccessibleInterface {
     ViewRoot& m_root;
 };
 
+ViewRoot::Ref::Ref(ViewObject* view) : m_view(view) {
+    if (view != nullptr) {
+        m_alive = view->m_lifetime;
+    }
+}
+
 ViewRoot::~ViewRoot() {
     if (m_accessibleId != 0) {
         QAccessible::deleteAccessibleInterface(m_accessibleId);
@@ -71,7 +77,7 @@ void ViewRoot::resize(QSize size, qreal scale) {
 ViewObject& ViewRoot::addView(std::unique_ptr<ViewObject> view) {
     ViewObject& added = *m_views.emplace_back(std::move(view));
     added.m_root = this;
-    addDamage(added.geometry());
+    addDamage(added.paintBounds());
     return added;
 }
 
@@ -84,18 +90,16 @@ std::unique_ptr<ViewObject> ViewRoot::removeView(ViewObject& view) {
     std::unique_ptr<ViewObject> removed = std::move(*held);
     m_views.erase(held);
     removed->m_root = nullptr;
-    addDamage(removed->geometry());
-    if (m_focusOwner == removed.get()) {
-        m_focusOwner = nullptr;
+    addDamage(removed->paintBounds());
+    if (m_focusOwner.get() == removed.get()) {
+        m_focusOwner = {};
     }
-    if (m_inputMethodOwner == removed.get()) {
-        m_inputMethodOwner = nullptr;
+    if (m_inputMethodOwner.get() == removed.get()) {
+        m_inputMethodOwner = {};
     }
-    if (m_pointerOwner.holder == removed.get()) {
-        m_pointerOwner = {};
-    }
+    leftTheTree(*removed);
     // The hovered view object may be the removed one or part of it; it learns that the pointer left before it goes.
-    if (m_hovered != nullptr) {
+    if (m_hovered.get() != nullptr) {
         updateHover(true);
     }
     return removed;
@@ -150,13 +154,13 @@ void ViewRoot::dispatch(const QEvent& event) {
     case QEvent::KeyRelease:
     case QEvent::FocusIn:
     case QEvent::FocusOut:
-        if (m_focusOwner != nullptr) {
-            m_focusOwner->handleEvent(event);
+        if (ViewObject* owner = m_focusOwner.get()) {
+            owner->handleEvent(event);
         }
         break;
     case QEvent::InputMethod:
-        if (m_inputMethodOwner != nullptr) {
-            m_inputMethodOwner->handleEvent(event);
+        if (ViewObject* owner = m_inputMethodOwner.get()) {
+            owner->handleEvent(event);
         }
         break;
     default:
@@ -165,8 +169,8 @@ void ViewRoot::dispatch(const QEvent& event) {
 }
 
 void ViewRoot::inputMethodQuery(QInputMethodQueryEvent& query) {
-    if (m_inputMethodOwner != nullptr) {
-        m_inputMethodOwner->inputMethodQuery(query);
+    if (ViewObject* owner = m_inputMethodOwner.get()) {
+        owner->inputMethodQuery(query);
     } else {
         query.setValue(Qt::ImEnabled, false);
     }
@@ -197,45 +201,65 @@ ViewRoot::Hit ViewRoot::hitAt(QPointF point) const {
     return {};
 }
 
+// The gesture whose owner is held by the view has no view to go to from now on.
+void ViewRoot::leftTheTree(const ViewObject& view) {
+    if (m_pointerOwner.holder == &view) {
+        m_pointerOwner.view = {};
+    }
+}
+
 void ViewRoot::dispatchPointer(const QSinglePointEvent& event) {
     const QEvent::Type type = event.type();
     const bool press =
         type == QEvent::MouseButtonPress || type == QEvent::MouseButtonDblClick || type == QEvent::TabletPress;
     const bool release = type == QEvent::MouseButtonRelease || type == QEvent::TabletRelease;
     const bool held = event.buttons() != Qt::NoButton;
+    const bool firstButton = press && event.buttons() == Qt::MouseButtons(event.button());
     m_pointer = event.position();
-    if (!held && !release) {
-        m_pointerOwner = {}; // no button is held, so no drag is going on
+    if ((!held && !release) || firstButton) {
+        m_pointerOwner = {}; // nothing is held, or the first button goes down: an earlier gesture lost its release
     }
     updateHover(true);
     // Hover callbacks can change the tree, so the target is found only now. A wheel turns whatever is under the
     // pointer.
-    const bool owned = m_pointerOwner.view != nullptr && type != QEvent::Wheel;
-    const Hit target = owned ? m_pointerOwner : hitAt(m_pointer);
-    if (target.view == nullptr) {
+    if (type == QEvent::Wheel) {
+        if (ViewObject* target = viewAt(m_pointer)) {
+            target->handleEvent(event);
+        }
         return;
     }
-    if (press && m_pointerOwner.view == nullptr) {
-        m_pointerOwner = target;
+    // The owner of a gesture takes all of it, and nobody else when it is gone.
+    const bool inGesture = m_pointerOwner.holder != nullptr;
+    const Hit target =
+        inGesture ? Hit{.holder = m_pointerOwner.holder, .view = m_pointerOwner.view.get()} : hitAt(m_pointer);
+    if (press && !inGesture) {
+        if (target.view != nullptr) {
+            m_pointerOwner = {.holder = target.holder, .view = Ref(target.view)};
+        }
     } else if (release && !held) {
         m_pointerOwner = {};
     }
-    target.view->handleEvent(event);
+    if (target.view != nullptr) {
+        target.view->handleEvent(event);
+    }
 }
 
 // m_hovered is updated before each callback runs. A callback can remove views, including the one it was called on or
-// the one that is to be entered, so the view to enter is found again after every callback.
+// the one that is to be entered, and a holder can destroy a descendant that was hovered, which then gets no callback.
+// The view to enter is found again after every callback.
 void ViewRoot::updateHover(bool pointerInside) {
     for (;;) {
         ViewObject* target = pointerInside ? viewAt(m_pointer) : nullptr;
-        if (target == m_hovered) {
+        ViewObject* hovered = m_hovered.get();
+        if (target == hovered) {
             return;
         }
-        if (m_hovered != nullptr) {
-            std::exchange(m_hovered, nullptr)->hoverChanged(false);
+        if (hovered != nullptr) {
+            m_hovered = {};
+            hovered->hoverChanged(false);
             continue;
         }
-        m_hovered = target;
+        m_hovered = Ref(target);
         target->hoverChanged(true);
     }
 }
@@ -250,9 +274,11 @@ void ViewRoot::paintChrome(const QRegion& damage) {
     painter.fillRect(m_surface, Qt::transparent);
     painter.setCompositionMode(QPainter::CompositionMode_SourceOver);
     // Every view paints, under the clip: what a view draws outside its geometry is cleared with the damage and has to
-    // come back with it.
+    // come back with it. It paints within its declared bounds only, which is all that adding, moving and removing it
+    // damages.
     for (const auto& view : m_views) {
         painter.save();
+        painter.setClipRect(view->paintBounds().toAlignedRect(), Qt::IntersectClip);
         view->paint(painter);
         painter.restore();
     }
