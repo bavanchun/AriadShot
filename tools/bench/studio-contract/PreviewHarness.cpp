@@ -197,9 +197,9 @@ int main(int argc, char** argv) {
         QStringLiteral("%1x%2").arg(exportResolution.width()).arg(exportResolution.height());
 
     QRhiWidget::Api rhiApi = QRhiWidget::Api::Vulkan;
+    QVulkanInstance vkInst;
     std::unique_ptr<QOffscreenSurface> glFallbackSurface;
     std::unique_ptr<QRhi> offscreenRhi;
-    QVulkanInstance vkInst;
 
     if (apiStr == QStringLiteral("opengl")) {
         rhiApi = QRhiWidget::Api::OpenGL;
