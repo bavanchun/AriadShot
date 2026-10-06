@@ -83,30 +83,33 @@ class RhiStudioCompositor final : public StudioCompositor {
         m_sampler = nullptr;
 
         m_allocatedSize = QSize();
-        m_lastTargetPassDesc = nullptr;
+        m_targetPassDesc.reset();
     }
 
-    void render(const FrameScene& scene, QRhiRenderTarget* target, QRhiCommandBuffer* cb) override {
+    bool render(const FrameScene& scene, QRhiRenderTarget* target, QRhiCommandBuffer* cb) override {
         if (!m_rhi || !target || !cb || !scene.isValid()) {
-            return;
+            return false;
+        }
+
+        if (scene.hasOverlay() && scene.overlayLayer().size() != scene.canvasSize()) {
+            return false;
         }
 
         QRhiResourceUpdateBatch* u = m_rhi->nextResourceUpdateBatch();
         if (!ensureResources(scene.canvasSize(), target, u)) {
             u->release();
-            return;
+            return false;
         }
 
         QImage src = scene.sourceFrame();
-        if (src.format() != QImage::Format_RGBA8888 && src.format() != QImage::Format_RGBA8888_Premultiplied) {
+        if (src.format() != QImage::Format_RGBA8888) {
             src = src.convertToFormat(QImage::Format_RGBA8888);
         }
         u->uploadTexture(m_sourceTexture, src);
 
         if (scene.hasOverlay()) {
             QImage overlay = scene.overlayLayer();
-            if (overlay.format() != QImage::Format_RGBA8888 &&
-                overlay.format() != QImage::Format_RGBA8888_Premultiplied) {
+            if (overlay.format() != QImage::Format_RGBA8888) {
                 overlay = overlay.convertToFormat(QImage::Format_RGBA8888);
             }
             u->uploadTexture(m_overlayTexture, overlay);
@@ -142,6 +145,8 @@ class RhiStudioCompositor final : public StudioCompositor {
         cb->setVertexInput(0, 1, &vInputFinal);
         cb->draw(6);
         cb->endPass();
+
+        return true;
     }
 
   private:
@@ -197,6 +202,8 @@ class RhiStudioCompositor final : public StudioCompositor {
             m_sourcePipeline = nullptr;
             delete m_overlayPipeline;
             m_overlayPipeline = nullptr;
+            delete m_outputPipeline;
+            m_outputPipeline = nullptr;
             delete m_sourceBindings;
             m_sourceBindings = nullptr;
             delete m_overlayBindings;
@@ -213,6 +220,7 @@ class RhiStudioCompositor final : public StudioCompositor {
             m_sourceTexture = nullptr;
             delete m_overlayTexture;
             m_overlayTexture = nullptr;
+            m_targetPassDesc.reset();
 
             m_sourceTexture = m_rhi->newTexture(QRhiTexture::RGBA8, size, 1, {});
             if (!m_sourceTexture->create()) {
@@ -268,6 +276,9 @@ class RhiStudioCompositor final : public StudioCompositor {
             const QShader srcFragShader = loadShader(QStringLiteral(":/media/studio/shaders/source_linear.frag.qsb"));
             const QShader overlayFragShader =
                 loadShader(QStringLiteral(":/media/studio/shaders/overlay_blend.frag.qsb"));
+            if (!vertShader.isValid() || !srcFragShader.isValid() || !overlayFragShader.isValid()) {
+                return false;
+            }
 
             QRhiVertexInputLayout inputLayout;
             inputLayout.setBindings({
@@ -298,6 +309,8 @@ class RhiStudioCompositor final : public StudioCompositor {
             m_overlayPipeline->setVertexInputLayout(inputLayout);
             m_overlayPipeline->setShaderResourceBindings(m_overlayBindings);
             m_overlayPipeline->setRenderPassDescriptor(m_workingRenderPassDesc);
+            // Blending in RGBA16F linear space: straight-alpha Over blend (SrcAlpha, OneMinusSrcAlpha)
+            // matching IEC 61966-2-1 linear blending and arch §3.4.3.
             QRhiGraphicsPipeline::TargetBlend blendState;
             blendState.enable = true;
             blendState.srcColor = QRhiGraphicsPipeline::SrcAlpha;
@@ -312,12 +325,17 @@ class RhiStudioCompositor final : public StudioCompositor {
             m_allocatedSize = size;
         }
 
-        if (!m_outputPipeline || m_lastTargetPassDesc != target->renderPassDescriptor()) {
+        if (!m_outputPipeline || !m_targetPassDesc ||
+            !target->renderPassDescriptor()->isCompatible(m_targetPassDesc.get())) {
             delete m_outputPipeline;
             m_outputPipeline = nullptr;
+            m_targetPassDesc.reset(target->renderPassDescriptor()->newCompatibleRenderPassDescriptor());
 
             const QShader vertShader = loadShader(QStringLiteral(":/media/studio/shaders/fullscreen.vert.qsb"));
             const QShader outFragShader = loadShader(QStringLiteral(":/media/studio/shaders/linear_to_srgb.frag.qsb"));
+            if (!vertShader.isValid() || !outFragShader.isValid()) {
+                return false;
+            }
 
             QRhiVertexInputLayout inputLayout;
             inputLayout.setBindings({
@@ -335,12 +353,10 @@ class RhiStudioCompositor final : public StudioCompositor {
             });
             m_outputPipeline->setVertexInputLayout(inputLayout);
             m_outputPipeline->setShaderResourceBindings(m_outputBindings);
-            m_outputPipeline->setRenderPassDescriptor(target->renderPassDescriptor());
+            m_outputPipeline->setRenderPassDescriptor(m_targetPassDesc.get());
             if (!m_outputPipeline->create()) {
                 return false;
             }
-
-            m_lastTargetPassDesc = target->renderPassDescriptor();
         }
 
         return true;
@@ -364,12 +380,15 @@ class RhiStudioCompositor final : public StudioCompositor {
     QRhiGraphicsPipeline* m_sourcePipeline = nullptr;
     QRhiGraphicsPipeline* m_overlayPipeline = nullptr;
     QRhiGraphicsPipeline* m_outputPipeline = nullptr;
-    QRhiRenderPassDescriptor* m_lastTargetPassDesc = nullptr;
+    std::unique_ptr<QRhiRenderPassDescriptor> m_targetPassDesc;
 };
 
 } // namespace
 
 std::unique_ptr<StudioCompositor> StudioCompositor::create(QRhi* rhi) {
+    if (!rhi) {
+        return nullptr;
+    }
     return std::make_unique<RhiStudioCompositor>(rhi);
 }
 

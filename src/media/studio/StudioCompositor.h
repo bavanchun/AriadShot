@@ -22,7 +22,8 @@ class StudioCompositor {
     virtual ~StudioCompositor() = default;
 
     // Renders the scene into the specified render target using the given command buffer.
-    virtual void render(const FrameScene& scene, QRhiRenderTarget* target, QRhiCommandBuffer* cb) = 0;
+    // Returns true on success, false on invalid input or GPU resource creation failure.
+    [[nodiscard]] virtual bool render(const FrameScene& scene, QRhiRenderTarget* target, QRhiCommandBuffer* cb) = 0;
 
     // Releases any cached RHI resources (textures, pipelines, buffers).
     virtual void releaseResources() = 0;

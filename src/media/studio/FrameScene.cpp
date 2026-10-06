@@ -13,6 +13,9 @@ FrameScene::FrameScene(QImage sourceFrame, qint64 compositionTimeNs, QImage over
     if (!m_sourceFrame.isNull() && m_sourceFrame.width() > 0 && m_sourceFrame.height() > 0) {
         m_canvasSize = m_sourceFrame.size();
         m_valid = true;
+        if (!m_overlayLayer.isNull() && m_overlayLayer.size() != m_canvasSize) {
+            m_valid = false;
+        }
     }
 }
 
@@ -25,7 +28,7 @@ qint64 FrameScene::compositionTime() const noexcept { return m_compositionTimeNs
 const QImage& FrameScene::overlayLayer() const noexcept { return m_overlayLayer; }
 
 bool FrameScene::hasOverlay() const noexcept {
-    return !m_overlayLayer.isNull() && m_overlayLayer.width() > 0 && m_overlayLayer.height() > 0;
+    return m_valid && !m_overlayLayer.isNull() && m_overlayLayer.size() == m_canvasSize;
 }
 
 QSize FrameScene::canvasSize() const noexcept { return m_canvasSize; }
