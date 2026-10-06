@@ -52,7 +52,7 @@ QImage areaAverage(const QImage& source, QSize size) {
         const std::span<const std::uint32_t> row = input.row(static_cast<std::int64_t>(y));
         for (std::size_t x = 0; x < width; ++x) {
             const std::span<float, kPixelChannels> mean(plane.get() + (y * width + x) * kPixelChannels, kPixelChannels);
-            std::fill(mean.begin(), mean.end(), 0.0F);
+            std::ranges::fill(mean, 0.0F);
             forEachCoveredSource(static_cast<int>(x), input.width(), output.width(), [&](int sourceX, double weight) {
                 const std::uint32_t pixel = row[toIndex(sourceX)];
                 mean[0] += static_cast<float>(weight * (pixel >> 24));
@@ -64,7 +64,7 @@ QImage areaAverage(const QImage& source, QSize size) {
     }
     const std::span<float> mean(columns.get(), width * kPixelChannels);
     for (int y = 0; y < output.height(); ++y) {
-        std::fill(mean.begin(), mean.end(), 0.0F);
+        std::ranges::fill(mean, 0.0F);
         forEachCoveredSource(y, input.height(), output.height(), [&](int sourceY, double weight) {
             const float* sourceRow = plane.get() + toIndex(sourceY) * width * kPixelChannels;
             for (std::size_t i = 0; i < mean.size(); ++i) {
