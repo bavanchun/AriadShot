@@ -48,8 +48,7 @@ Notes:
   GNOME 48+ VM joins at M5.
 - Harness scripts record every compositor and application process they start (PID, start time, command line) and stop
   exactly those on exit.
-- Tier 2 becomes a required step of the `linux-gcc` CI job once its harness proves itself in the CI container
-  [HYPOTHESIS: headless Sway runs in the Arch CI container with the pixman renderer]. Tier-3 and tier-4 results are
+- Tier 2 is a required step of the `linux-gcc` CI job. Tier-3 and tier-4 results are
   attached to pull requests as run logs.
 
 ## 3. Layout, naming, labels and environment

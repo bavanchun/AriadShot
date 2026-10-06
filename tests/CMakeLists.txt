@@ -42,6 +42,17 @@ ARIADSHOT_TEST_OUTPUT_DIR=set:${root}/output")
     endif()
 endfunction()
 
+set(ARIADSHOT_WAYLAND_SOCKET "${PROJECT_BINARY_DIR}/wl.sock")
+
+# Applies the Wayland client test environment with a fixed socket path and requires the Sway fixture.
+function(ariadshot_wayland_test_environment name)
+    ariadshot_test_environment(${name})
+    set_property(TEST "${name}" APPEND PROPERTY FIXTURES_REQUIRED "wayland_sway")
+    set_property(TEST "${name}" APPEND PROPERTY ENVIRONMENT_MODIFICATION
+        "QT_QPA_PLATFORM=set:wayland;\
+WAYLAND_DISPLAY=set:${ARIADSHOT_WAYLAND_SOCKET}")
+endfunction()
+
 # ariadshot_add_test(NAME <area>.<topic> SOURCES <files>... [LIBS <targets>...] [LABELS <labels>...])
 function(ariadshot_add_test)
     cmake_parse_arguments(PARSE_ARGV 0 arg "" "NAME" "SOURCES;LIBS;LABELS")
@@ -53,8 +64,27 @@ function(ariadshot_add_test)
     target_link_libraries(${target} PRIVATE Qt6::Test AriadShot::options ${arg_LIBS})
     add_test(NAME ${arg_NAME} COMMAND ${target})
     set_tests_properties(${arg_NAME} PROPERTIES LABELS "${arg_LABELS}")
-    ariadshot_test_environment(${arg_NAME})
+    if("wayland" IN_LIST arg_LABELS)
+        ariadshot_wayland_test_environment(${arg_NAME})
+    else()
+        ariadshot_test_environment(${arg_NAME})
+    endif()
 endfunction()
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    find_program(ARIADSHOT_BASH bash REQUIRED)
+    add_test(NAME wayland.fixture.setup
+        COMMAND "${ARIADSHOT_BASH}" "${CMAKE_CURRENT_SOURCE_DIR}/integration/harness/run-headless-sway.sh" start
+                --socket "${ARIADSHOT_WAYLAND_SOCKET}")
+    set_tests_properties(wayland.fixture.setup PROPERTIES FIXTURES_SETUP wayland_sway LABELS wayland)
+
+    add_test(NAME wayland.fixture.cleanup
+        COMMAND "${ARIADSHOT_BASH}" "${CMAKE_CURRENT_SOURCE_DIR}/integration/harness/run-headless-sway.sh" stop
+                --socket "${ARIADSHOT_WAYLAND_SOCKET}")
+    set_tests_properties(wayland.fixture.cleanup PROPERTIES FIXTURES_CLEANUP wayland_sway LABELS wayland)
+
+    add_subdirectory(integration)
+endif()
 
 add_library(ariadshot_test_support STATIC support/ImageCompare.h support/ImageCompare.cpp)
 target_include_directories(ariadshot_test_support PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")

@@ -55,7 +55,7 @@ build-system tests use `add_test` followed by `ariadshot_test_environment(<name>
 | `unit` | tier 0 (`QCoreApplication`) and tier 1 (offscreen) tests | every preset except `tsan` |
 | `golden` | image comparisons on the offscreen platform | every preset except `tsan` |
 | `tsan-safe` | no Qt threading of its own; runs under ThreadSanitizer | `tsan` runs only these |
-| `wayland` | tier 2, headless Sway (added with the first protocol client) | excluded from `dev` and `asan` |
+| `wayland` | tier 2, headless Sway | excluded from `dev` and `asan` |
 | `nested-hyprland` | tier 3, nested Hyprland on the reference host | excluded; results attached to the pull request |
 | `live` | tier 4, the live session; every run approved by the maintainer | excluded |
 
@@ -85,6 +85,16 @@ environment variable for font selection.
 Under ThreadSanitizer (`tsan`), tests run with `ignore_noninstrumented_modules=1`: the system Qt and libstdc++ are
 not instrumented, so only races that AriadShot's instrumented code takes part in are reported. The suppressions in
 `tests/sanitizers/tsan.supp` name exported symbols only.
+
+## Tier 2: Headless Sway (`wayland`)
+
+Tier-2 tests run against a script-started headless Sway instance (`tests/integration/harness/run-headless-sway.sh`)
+with two outputs (one rotated 90°). The CTest fixture `wayland_sway` automatically starts and stops the harness.
+
+```bash
+ctest --test-dir build/dev -L '^wayland$' --output-on-failure
+# Or wrap directly: tests/integration/harness/run-headless-sway.sh <command>
+```
 
 ## Golden images
 
