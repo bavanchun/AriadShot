@@ -3,12 +3,11 @@
 # SPDX-License-Identifier: GPL-3.0-only
 #
 # Process registry for integration test harnesses (docs/spec/12-testing-strategy.md §2).
+# The record format is a superset of scripts/worktree.sh (adds pgid= for process-group cleanup).
 
-set -uo pipefail
-
-process_cmdline() { tr '\0' ' ' <"/proc/$1/cmdline" 2>/dev/null | sed 's/ $//'; }
-process_start() { sed -E 's/^.*\) //' "/proc/$1/stat" 2>/dev/null | cut -d ' ' -f 20; }
-process_pgid() { sed -E 's/^.*\) //' "/proc/$1/stat" 2>/dev/null | cut -d ' ' -f 3; }
+process_cmdline() { [ -r "/proc/$1/cmdline" ] && tr '\0' ' ' <"/proc/$1/cmdline" 2>/dev/null | sed 's/ $//'; }
+process_start() { [ -r "/proc/$1/stat" ] && sed -E 's/^.*\) //' "/proc/$1/stat" 2>/dev/null | cut -d ' ' -f 20; }
+process_pgid() { [ -r "/proc/$1/stat" ] && sed -E 's/^.*\) //' "/proc/$1/stat" 2>/dev/null | cut -d ' ' -f 3; }
 
 record_matches() {
     local pid=$1 start=$2 cmdline=$3
@@ -49,6 +48,8 @@ stop_record() {
             waited=$((waited + 1))
         done
         record_matches "$pid" "$start" "$cmdline" && kill -KILL "$target" 2>/dev/null || true
+    elif [ -n "$pid" ] && [ -d "/proc/$pid" ]; then
+        echo "process-registry: warning: record $record does not match running process $pid (start: $start vs $(process_start "$pid"), cmdline: $cmdline vs $(process_cmdline "$pid"))" >&2
     fi
     rm -f "$record"
 }
@@ -70,6 +71,7 @@ stop_all_processes() {
 }
 
 if [ "${BASH_SOURCE[0]}" = "$0" ]; then
+    set -uo pipefail
     command=${1:-}
     shift || true
     case "$command" in

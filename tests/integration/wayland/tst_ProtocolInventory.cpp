@@ -3,6 +3,7 @@
 
 #include <QDebug>
 #include <QMap>
+#include <QScopeGuard>
 #include <QString>
 #include <QStringList>
 #include <QTest>
@@ -10,6 +11,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <utility>
 #include <wayland-client-protocol.h>
 #include <wayland-client.h>
 
@@ -20,7 +22,7 @@ namespace {
 struct OutputInfo {
     uint32_t id = 0;
     QString name;
-    int32_t transform = -1, scale = 1, width = 0, height = 0;
+    int32_t transform = -1;
     bool done = false;
     struct wl_output* output = nullptr;
 };
@@ -51,32 +53,17 @@ const struct wl_registry_listener kRegistryListener = {
     .global_remove = registryGlobalRemove,
 };
 
-void outputGeometry(void* data, struct wl_output* /*wlOutput*/, int32_t /*x*/, int32_t /*y*/, int32_t /*physicalWidth*/,
-                    int32_t /*physicalHeight*/, int32_t /*subpixel*/, const char* /*make*/, const char* /*model*/,
-                    int32_t transform) {
+void outputGeometry(void* data, struct wl_output*, int32_t, int32_t, int32_t, int32_t, int32_t, const char*,
+                    const char*, int32_t transform) {
     static_cast<OutputInfo*>(data)->transform = transform;
 }
-
-void outputMode(void* data, struct wl_output* /*wlOutput*/, uint32_t flags, int32_t width, int32_t height,
-                int32_t /*refresh*/) {
-    if ((flags & static_cast<uint32_t>(WL_OUTPUT_MODE_CURRENT)) != 0U) {
-        auto* info = static_cast<OutputInfo*>(data);
-        info->width = width;
-        info->height = height;
-    }
-}
-
-void outputDone(void* data, struct wl_output* /*wlOutput*/) { static_cast<OutputInfo*>(data)->done = true; }
-
-void outputScale(void* data, struct wl_output* /*wlOutput*/, int32_t factor) {
-    static_cast<OutputInfo*>(data)->scale = factor;
-}
-
-void outputName(void* data, struct wl_output* /*wlOutput*/, const char* name) {
+void outputMode(void*, struct wl_output*, uint32_t, int32_t, int32_t, int32_t) {}
+void outputDone(void* data, struct wl_output*) { static_cast<OutputInfo*>(data)->done = true; }
+void outputScale(void*, struct wl_output*, int32_t) {}
+void outputName(void* data, struct wl_output*, const char* name) {
     static_cast<OutputInfo*>(data)->name = QString::fromUtf8(name);
 }
-
-void outputDescription(void* /*data*/, struct wl_output* /*wlOutput*/, const char* /*description*/) {}
+void outputDescription(void*, struct wl_output*, const char*) {}
 
 const struct wl_output_listener kOutputListener = {
     .geometry = outputGeometry,
@@ -90,8 +77,7 @@ const struct wl_output_listener kOutputListener = {
 void cleanupOutputs(QVector<OutputInfo>& outputs) {
     for (auto& out : outputs) {
         if (out.output != nullptr) {
-            wl_output_destroy(out.output);
-            out.output = nullptr;
+            wl_output_destroy(std::exchange(out.output, nullptr));
         }
     }
 }
@@ -123,10 +109,14 @@ void ProtocolInventoryTest::inventoryAdvertisesRequiredGlobalsAndOutputs() {
         QFAIL("Failed to acquire wl_registry from Wayland display");
     }
 
-    wl_registry_add_listener(registry, &kRegistryListener, &ctx);
-    if (wl_display_roundtrip(display) < 0) {
+    const auto cleanup = qScopeGuard([&] {
+        cleanupOutputs(ctx.outputs);
         wl_registry_destroy(registry);
         wl_display_disconnect(display);
+    });
+
+    wl_registry_add_listener(registry, &kRegistryListener, &ctx);
+    if (wl_display_roundtrip(display) < 0) {
         QFAIL("wl_display_roundtrip failed during registry enumeration");
     }
 
@@ -137,9 +127,6 @@ void ProtocolInventoryTest::inventoryAdvertisesRequiredGlobalsAndOutputs() {
     }
 
     if (wl_display_roundtrip(display) < 0) {
-        cleanupOutputs(ctx.outputs);
-        wl_registry_destroy(registry);
-        wl_display_disconnect(display);
         QFAIL("wl_display_roundtrip failed during output enumeration");
     }
 
@@ -148,48 +135,59 @@ void ProtocolInventoryTest::inventoryAdvertisesRequiredGlobalsAndOutputs() {
         qInfo().noquote() << " " << it.key() << "version:" << it.value();
     }
 
-    const QStringList requiredGlobals = {u"zwlr_layer_shell_v1"_s, u"ext_image_copy_capture_manager_v1"_s,
-                                         u"ext_output_image_capture_source_manager_v1"_s,
-                                         u"zwlr_screencopy_manager_v1"_s};
+    struct RequiredGlobal {
+        QString name;
+        uint32_t minVersion;
+    };
+
+    const QVector<RequiredGlobal> requiredGlobals = {
+        {.name = u"zwlr_layer_shell_v1"_s, .minVersion = 1},
+        {.name = u"ext_image_copy_capture_manager_v1"_s, .minVersion = 1},
+        {.name = u"ext_output_image_capture_source_manager_v1"_s, .minVersion = 1},
+        {.name = u"zwlr_screencopy_manager_v1"_s, .minVersion = 1},
+        {.name = u"wl_output"_s, .minVersion = 4},
+    };
 
     QStringList missing;
     for (const auto& req : requiredGlobals) {
-        if (!ctx.globals.contains(req)) {
-            missing.append(req);
+        const uint32_t version = ctx.globals.value(req.name, 0);
+        if (version == 0) {
+            missing.append(req.name);
+        } else if (version < req.minVersion) {
+            missing.append(u"%1 (v%2 < min v%3)"_s.arg(req.name).arg(version).arg(req.minVersion));
         }
     }
 
-    if (!ctx.globals.contains(u"ext_data_control_manager_v1"_s) &&
-        !ctx.globals.contains(u"zwlr_data_control_manager_v1"_s)) {
-        missing.append(u"ext_data_control_manager_v1 or zwlr_data_control_manager_v1"_s);
+    const bool hasDataControl = (ctx.globals.value(u"ext_data_control_manager_v1"_s, 0) >= 1) ||
+                                (ctx.globals.value(u"zwlr_data_control_manager_v1"_s, 0) >= 1);
+    if (!hasDataControl) {
+        missing.append(u"ext_data_control_manager_v1 (>= 1) or zwlr_data_control_manager_v1 (>= 1)"_s);
     }
 
     if (!missing.isEmpty()) {
-        cleanupOutputs(ctx.outputs);
-        wl_registry_destroy(registry);
-        wl_display_disconnect(display);
         QFAIL(qPrintable(u"Missing required Wayland protocol global(s): %1"_s.arg(missing.join(u", "_s))));
     }
 
     QCOMPARE(ctx.outputs.size(), 2);
-    bool hasNormal = false;
-    bool hasTransform90 = false;
+    bool hasHeadless1 = false;
+    bool hasHeadless2 = false;
     for (const auto& out : ctx.outputs) {
         QVERIFY(!out.name.isEmpty());
         QVERIFY(out.done);
-        if (out.transform == WL_OUTPUT_TRANSFORM_NORMAL) {
-            hasNormal = true;
-        } else if (out.transform == WL_OUTPUT_TRANSFORM_90 || out.transform == WL_OUTPUT_TRANSFORM_270) {
-            hasTransform90 = true;
+        if (out.name == u"HEADLESS-1"_s) {
+            QCOMPARE(out.transform, static_cast<int32_t>(WL_OUTPUT_TRANSFORM_NORMAL));
+            hasHeadless1 = true;
+        } else if (out.name == u"HEADLESS-2"_s) {
+            // Sway config uses clockwise transform angles, whereas Wayland's enum wl_output_transform
+            // specifies counter-clockwise rotation. Sway inverts the angle in sway/commands/output/transform.c:60-64
+            // (invert_rotation_direction()), so configuring "transform 90" produces WL_OUTPUT_TRANSFORM_270.
+            QCOMPARE(out.transform, static_cast<int32_t>(WL_OUTPUT_TRANSFORM_270));
+            hasHeadless2 = true;
         }
     }
 
-    cleanupOutputs(ctx.outputs);
-    wl_registry_destroy(registry);
-    wl_display_disconnect(display);
-
-    QVERIFY2(hasNormal, "Expected one output with normal orientation (WL_OUTPUT_TRANSFORM_NORMAL)");
-    QVERIFY2(hasTransform90, "Expected one output with 90-degree transform");
+    QVERIFY2(hasHeadless1, "Expected output named HEADLESS-1 with WL_OUTPUT_TRANSFORM_NORMAL");
+    QVERIFY2(hasHeadless2, "Expected output named HEADLESS-2 with WL_OUTPUT_TRANSFORM_270");
 }
 
 QTEST_GUILESS_MAIN(ProtocolInventoryTest)

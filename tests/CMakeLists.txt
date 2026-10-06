@@ -7,7 +7,6 @@
 # tsan-safe.
 
 set(ARIADSHOT_TEST_ROOT "${CMAKE_CURRENT_BINARY_DIR}/environment")
-find_program(ARIADSHOT_BASH bash REQUIRED)
 
 # Applies the neutral environment to an existing test and makes it require the directory set-up fixture.
 function(ariadshot_test_environment name)
@@ -72,21 +71,20 @@ function(ariadshot_add_test)
     endif()
 endfunction()
 
-add_test(NAME wayland.fixture.setup
-    COMMAND "${ARIADSHOT_BASH}" "${CMAKE_CURRENT_SOURCE_DIR}/integration/harness/run-headless-sway.sh" start
-            --socket "${ARIADSHOT_WAYLAND_SOCKET}")
-set_tests_properties(wayland.fixture.setup PROPERTIES
-    FIXTURES_SETUP wayland_sway
-    LABELS wayland)
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    find_program(ARIADSHOT_BASH bash REQUIRED)
+    add_test(NAME wayland.fixture.setup
+        COMMAND "${ARIADSHOT_BASH}" "${CMAKE_CURRENT_SOURCE_DIR}/integration/harness/run-headless-sway.sh" start
+                --socket "${ARIADSHOT_WAYLAND_SOCKET}")
+    set_tests_properties(wayland.fixture.setup PROPERTIES FIXTURES_SETUP wayland_sway LABELS wayland)
 
-add_test(NAME wayland.fixture.cleanup
-    COMMAND "${ARIADSHOT_BASH}" "${CMAKE_CURRENT_SOURCE_DIR}/integration/harness/run-headless-sway.sh" stop
-            --socket "${ARIADSHOT_WAYLAND_SOCKET}")
-set_tests_properties(wayland.fixture.cleanup PROPERTIES
-    FIXTURES_CLEANUP wayland_sway
-    LABELS wayland)
+    add_test(NAME wayland.fixture.cleanup
+        COMMAND "${ARIADSHOT_BASH}" "${CMAKE_CURRENT_SOURCE_DIR}/integration/harness/run-headless-sway.sh" stop
+                --socket "${ARIADSHOT_WAYLAND_SOCKET}")
+    set_tests_properties(wayland.fixture.cleanup PROPERTIES FIXTURES_CLEANUP wayland_sway LABELS wayland)
 
-add_subdirectory(integration)
+    add_subdirectory(integration)
+endif()
 
 add_library(ariadshot_test_support STATIC support/ImageCompare.h support/ImageCompare.cpp)
 target_include_directories(ariadshot_test_support PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
