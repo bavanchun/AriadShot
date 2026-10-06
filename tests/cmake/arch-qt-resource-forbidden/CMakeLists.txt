@@ -17,4 +17,4 @@ qt_add_resources(ariadshot_other "other_resources"
 
 ariadshot_add_module(NAME app KIND STATIC ALLOWED Qt6::Core)
 target_sources(ariadshot_app PRIVATE Fixture.cpp)
-target_link_libraries(ariadshot_app PUBLIC Qt6::Core PRIVATE ariadshot_other_resources_1)
+target_link_libraries(ariadshot_app PUBLIC Qt6::Core PRIVATE $<TARGET_OBJECTS:ariadshot_other_resources_1>)
