@@ -6,14 +6,20 @@
 
 #include <QTest>
 
+#include <array>
 #include <climits>
 #include <cstring>
+#include <limits>
+#include <utility>
 
 using ariadshot::render::ConstPixelSpan;
 using ariadshot::render::makeCanonicalImage;
 using ariadshot::render::PixelSpan;
 
 namespace {
+
+constexpr qint64 kSmallestCoordinate = std::numeric_limits<qint64>::min();
+constexpr qint64 kLargestCoordinate = std::numeric_limits<qint64>::max();
 
 // Raw access to the image bytes that does not go through PixelSpan, so the tests check the view against the memory.
 quint32 rawPixel(const QImage& image, int x, int y) {
@@ -36,6 +42,11 @@ class PixelSpanTest : public QObject {
     void writesLandInTheImage();
     void rejectsRowsOutsideTheImage_data();
     void rejectsRowsOutsideTheImage();
+    void pixelsAreReachedByColumnAndRow();
+    void rejectsColumnsOutsideTheRow_data();
+    void rejectsColumnsOutsideTheRow();
+    void rejectsRowsOutsideTheImageByCoordinates_data();
+    void rejectsRowsOutsideTheImageByCoordinates();
     void isEmptyForImagesThatAreNotCanonical_data();
     void isEmptyForImagesThatAreNotCanonical();
     void aWritableViewDetachesASharedImage();
@@ -70,23 +81,112 @@ void PixelSpanTest::writesLandInTheImage() {
 }
 
 void PixelSpanTest::rejectsRowsOutsideTheImage_data() {
-    QTest::addColumn<int>("y");
+    QTest::addColumn<qint64>("y");
 
-    QTest::newRow("one above the first row") << -1;
-    QTest::newRow("one past the last row") << 3;
-    QTest::newRow("far below") << 1000;
-    QTest::newRow("smallest int") << INT_MIN;
-    QTest::newRow("largest int") << INT_MAX;
+    QTest::newRow("one above the first row") << qint64{-1};
+    QTest::newRow("one past the last row") << qint64{3};
+    QTest::newRow("far below") << qint64{1000};
+    QTest::newRow("smallest int") << qint64{INT_MIN};
+    QTest::newRow("largest int") << qint64{INT_MAX};
+    // These two wrap to row 1 and row 0 when truncated to 32 bits, which is a valid row.
+    QTest::newRow("a 64-bit row that wraps to row 1") << (qint64{1} << 32) + 1;
+    QTest::newRow("a 64-bit row that wraps to row 0") << (qint64{1} << 32);
+    QTest::newRow("smallest 64-bit row") << kSmallestCoordinate;
+    QTest::newRow("largest 64-bit row") << kLargestCoordinate;
 }
 
 void PixelSpanTest::rejectsRowsOutsideTheImage() {
-    QFETCH(int, y);
+    QFETCH(qint64, y);
 
     QImage image = makeCanonicalImage(QSize(5, 3), 1.0);
     const PixelSpan writable(image);
     const ConstPixelSpan readOnly(std::as_const(image));
     QVERIFY(writable.row(y).empty());
     QVERIFY(readOnly.row(y).empty());
+}
+
+void PixelSpanTest::pixelsAreReachedByColumnAndRow() {
+    QImage image = makeCanonicalImage(QSize(5, 3), 1.0);
+    // The last pixel of one row and the first of the next sit next to each other in a flat index; a column and a row
+    // must not mix them up.
+    setRawPixel(image, 4, 0, 0xff00000aU);
+    setRawPixel(image, 0, 1, 0xff00000bU);
+    setRawPixel(image, 4, 2, 0xff00000cU);
+
+    const PixelSpan writable(image);
+    const ConstPixelSpan readOnly(std::as_const(image));
+    QVERIFY(writable.pixel(4, 0) != nullptr);
+    QVERIFY(readOnly.pixel(4, 0) != nullptr);
+    QCOMPARE(*writable.pixel(4, 0), 0xff00000aU);
+    QCOMPARE(*readOnly.pixel(0, 1), 0xff00000bU);
+    QCOMPARE(*readOnly.pixel(4, 2), 0xff00000cU);
+    QCOMPARE(*readOnly.pixel(0, 0), 0U);
+
+    *writable.pixel(0, 2) = 0xff0d0e0fU;
+    QCOMPARE(rawPixel(image, 0, 2), 0xff0d0e0fU);
+    QCOMPARE(rawPixel(image, 4, 1), 0U);
+    QCOMPARE(rawPixel(image, 4, 2), 0xff00000cU);
+}
+
+void PixelSpanTest::rejectsColumnsOutsideTheRow_data() {
+    QTest::addColumn<qint64>("x");
+    QTest::addColumn<qint64>("y");
+
+    // The image is 5 pixels wide and 3 high. One past the last column of row 0 is the first pixel of row 1 in a flat
+    // index, and one past the last column of the last row is outside the image's memory.
+    const std::array<std::pair<const char*, qint64>, 3> rows = {{{"first row", 0}, {"middle row", 1}, {"last row", 2}}};
+    const std::array<std::pair<const char*, qint64>, 9> columns = {{{"one left of the row", -1},
+                                                                    {"one past the row", 5},
+                                                                    {"two past the row", 6},
+                                                                    {"a row's worth past", 10},
+                                                                    {"far right", 1000},
+                                                                    {"smallest int", INT_MIN},
+                                                                    {"largest int", INT_MAX},
+                                                                    {"smallest 64-bit", kSmallestCoordinate},
+                                                                    {"largest 64-bit", kLargestCoordinate}}};
+    for (const auto& [rowName, y] : rows) {
+        for (const auto& [columnName, x] : columns) {
+            QTest::newRow(qPrintable(QStringLiteral("%1, %2").arg(QLatin1String(rowName), QLatin1String(columnName))))
+                << x << y;
+        }
+    }
+    // A column that wraps to a valid column when truncated to 32 bits.
+    QTest::newRow("a 64-bit column that wraps to column 1") << (qint64{1} << 32) + 1 << qint64{0};
+}
+
+void PixelSpanTest::rejectsColumnsOutsideTheRow() {
+    QFETCH(qint64, x);
+    QFETCH(qint64, y);
+
+    QImage image = makeCanonicalImage(QSize(5, 3), 1.0);
+    const PixelSpan writable(image);
+    const ConstPixelSpan readOnly(std::as_const(image));
+    QVERIFY(writable.pixel(x, y) == nullptr);
+    QVERIFY(readOnly.pixel(x, y) == nullptr);
+}
+
+void PixelSpanTest::rejectsRowsOutsideTheImageByCoordinates_data() {
+    QTest::addColumn<qint64>("x");
+    QTest::addColumn<qint64>("y");
+
+    QTest::newRow("one above the first row") << qint64{0} << qint64{-1};
+    QTest::newRow("one past the last row") << qint64{4} << qint64{3};
+    QTest::newRow("far below") << qint64{2} << qint64{1000};
+    QTest::newRow("smallest int") << qint64{2} << qint64{INT_MIN};
+    QTest::newRow("largest int") << qint64{2} << qint64{INT_MAX};
+    QTest::newRow("a 64-bit row that wraps to row 1") << qint64{2} << (qint64{1} << 32) + 1;
+    QTest::newRow("both outside") << qint64{-1} << qint64{3};
+}
+
+void PixelSpanTest::rejectsRowsOutsideTheImageByCoordinates() {
+    QFETCH(qint64, x);
+    QFETCH(qint64, y);
+
+    QImage image = makeCanonicalImage(QSize(5, 3), 1.0);
+    const PixelSpan writable(image);
+    const ConstPixelSpan readOnly(std::as_const(image));
+    QVERIFY(writable.pixel(x, y) == nullptr);
+    QVERIFY(readOnly.pixel(x, y) == nullptr);
 }
 
 void PixelSpanTest::isEmptyForImagesThatAreNotCanonical_data() {

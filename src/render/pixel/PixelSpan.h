@@ -11,9 +11,9 @@
 
 namespace ariadshot::render {
 
-// A bounds-checked view of the pixels of a canonical image (QImage::Format_ARGB32_Premultiplied), one scan line at a
-// time. This is the audited pixel module: it is the only code that reads the image's memory through pointers; every
-// other pixel loop works on the spans handed out here (and on its own scratch buffers).
+// A bounds-checked view of the pixels of a canonical image (QImage::Format_ARGB32_Premultiplied), one scan line or one
+// pixel at a time. This is the audited pixel module: it is the only code that reads the image's memory through
+// pointers; every other pixel loop works on the spans and pixels handed out here (and on its own scratch buffers).
 //
 // A pixel is a 32-bit 0xAARRGGBB value with premultiplied colour channels. The view is empty for a null image or any
 // other format. A writable view detaches the image first, so it never changes a shared copy. A view stays valid while
@@ -28,8 +28,13 @@ template <typename Pixel> class BasicPixelSpan final {
     [[nodiscard]] int width() const noexcept { return m_width; }
     [[nodiscard]] int height() const noexcept { return m_height; }
 
-    // Scan line y as exactly width() pixels; an empty span when y is outside [0, height()).
-    [[nodiscard]] std::span<Pixel> row(int y) const noexcept;
+    // Scan line y as exactly width() pixels; an empty span when y is outside [0, height()). Indexing the span is
+    // checked only where the standard library's assertions are on, so a loop over a row stays within the span's size.
+    [[nodiscard]] std::span<Pixel> row(std::int64_t y) const noexcept;
+
+    // The pixel at column x of row y, or nullptr when x is outside [0, width()) or y outside [0, height()). Both
+    // coordinates are checked in every build, for any 64-bit values. Use it for a pixel at a computed position.
+    [[nodiscard]] Pixel* pixel(std::int64_t x, std::int64_t y) const noexcept;
 
   private:
     using Byte = std::conditional_t<std::is_const_v<Pixel>, const unsigned char, unsigned char>;
