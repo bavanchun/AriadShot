@@ -202,7 +202,7 @@ QImage renderOffscreenToImage(QRhi* rhi, StudioCompositor* compositor, const Fra
     }
 
     const auto* p = reinterpret_cast<const uchar*>(rbResult.data.constData());
-    QImage image(p, size.width(), size.height(), size.width() * 4, QImage::Format_RGBA8888);
+    QImage image(p, size.width(), size.height(), static_cast<qsizetype>(size.width()) * 4, QImage::Format_RGBA8888);
     if (rhi->isYUpInFramebuffer()) {
         image = image.flipped(Qt::Vertical);
     }
