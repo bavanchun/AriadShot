@@ -96,6 +96,11 @@ ariadshot_add_test(NAME render.pixelate
     LIBS AriadShot::render
     LABELS unit tsan-safe)
 
+ariadshot_add_test(NAME render.shadow
+    SOURCES unit/render/tst_Shadow.cpp
+    LIBS AriadShot::render
+    LABELS unit tsan-safe)
+
 ariadshot_add_test(NAME render.smoke-golden
     SOURCES golden/tst_RenderSmoke.cpp
     LIBS AriadShot::render ariadshot_test_support

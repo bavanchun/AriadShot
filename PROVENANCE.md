@@ -39,3 +39,5 @@ AriadShot does not reuse MacShot's name, logo, DMG artwork, capture sound, embed
 | `tests/unit/render/tst_Blur.cpp` | `macshot/Model/Annotation.swift:2256` | the same sigma rule, as expected values |
 | `src/render/effects/Pixelate.cpp` | `macshot/Model/Annotation.swift:1953-2020` | the three step sizes: reduce by 8, then by 2, enlarge to twice the region's size in points |
 | `tests/unit/render/tst_Pixelate.cpp` | `macshot/Model/Annotation.swift:1990-2015` | the same step sizes, as expected values |
+| `src/render/beautify/Shadow.cpp` | `macshot/Services/BeautifyRenderer.swift:493-591`, `:840-895` | the ambient and contact shadow table (alpha, offset and blur for a radius) and the pass orders of the rounded, window-body and snapped-window shadows |
+| `tests/unit/render/tst_Shadow.cpp` | `macshot/Services/BeautifyRenderer.swift:493-518`, `:538-591`, `:867-884` | the same table values and pass orders, as expected values |

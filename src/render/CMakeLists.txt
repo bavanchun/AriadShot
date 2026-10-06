@@ -13,7 +13,9 @@ target_sources(ariadshot_render PRIVATE
     effects/Blur.h
     effects/Blur.cpp
     effects/Pixelate.h
-    effects/Pixelate.cpp)
+    effects/Pixelate.cpp
+    beautify/Shadow.h
+    beautify/Shadow.cpp)
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     set_target_properties(ariadshot_render PROPERTIES AUTORCC ON)
     target_sources(ariadshot_render PRIVATE resources/fonts/fonts.qrc)
