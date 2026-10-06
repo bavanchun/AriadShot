@@ -51,4 +51,8 @@ using ConstPixelSpan = BasicPixelSpan<const std::uint32_t>;
 extern template class BasicPixelSpan<std::uint32_t>;
 extern template class BasicPixelSpan<const std::uint32_t>;
 
+// Whether a view can be made of `image`: it is not null and is QImage::Format_ARGB32_Premultiplied. Code outside this
+// module asks it instead of making a view, which only this module does.
+[[nodiscard]] bool canViewPixels(const QImage& image) noexcept;
+
 } // namespace ariadshot::render

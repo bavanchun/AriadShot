@@ -101,6 +101,16 @@ ariadshot_add_test(NAME render.shadow
     LIBS AriadShot::render
     LABELS unit tsan-safe)
 
+ariadshot_add_test(NAME render.box-blur
+    SOURCES unit/render/tst_BoxBlur.cpp
+    LIBS AriadShot::render
+    LABELS unit tsan-safe)
+
+ariadshot_add_test(NAME render.resample
+    SOURCES unit/render/tst_Resample.cpp
+    LIBS AriadShot::render
+    LABELS unit tsan-safe)
+
 ariadshot_add_test(NAME render.smoke-golden
     SOURCES golden/tst_RenderSmoke.cpp
     LIBS AriadShot::render ariadshot_test_support

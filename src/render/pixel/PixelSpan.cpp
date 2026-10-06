@@ -48,4 +48,6 @@ template <typename Pixel> Pixel* BasicPixelSpan<Pixel>::pixel(std::int64_t x, st
 template class BasicPixelSpan<std::uint32_t>;
 template class BasicPixelSpan<const std::uint32_t>;
 
+bool canViewPixels(const QImage& image) noexcept { return !ConstPixelSpan(image).isEmpty(); }
+
 } // namespace ariadshot::render

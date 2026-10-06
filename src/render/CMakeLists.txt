@@ -10,6 +10,11 @@ target_sources(ariadshot_render PRIVATE
     text/FontSet.cpp
     pixel/PixelSpan.h
     pixel/PixelSpan.cpp
+    pixel/FloatChannels.h
+    pixel/BoxBlur.h
+    pixel/BoxBlur.cpp
+    pixel/Resample.h
+    pixel/Resample.cpp
     effects/Blur.h
     effects/Blur.cpp
     effects/Pixelate.h

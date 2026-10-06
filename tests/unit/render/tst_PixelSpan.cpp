@@ -12,6 +12,7 @@
 #include <limits>
 #include <utility>
 
+using ariadshot::render::canViewPixels;
 using ariadshot::render::ConstPixelSpan;
 using ariadshot::render::makeCanonicalImage;
 using ariadshot::render::PixelSpan;
@@ -58,6 +59,7 @@ void PixelSpanTest::rowsHoldExactlyOneScanLineOfThePixels() {
     setRawPixel(image, 4, 2, 0xff102030U);
     setRawPixel(image, 0, 1, 0x80402010U);
 
+    QVERIFY(canViewPixels(image));
     const ConstPixelSpan view(std::as_const(image));
     QVERIFY(!view.isEmpty());
     QCOMPARE(view.width(), 5);
@@ -209,8 +211,10 @@ void PixelSpanTest::isEmptyForImagesThatAreNotCanonical() {
     QVERIFY(readOnly.isEmpty());
     QVERIFY(writable.row(0).empty());
     QVERIFY(readOnly.row(0).empty());
+    QVERIFY(!canViewPixels(image));
 
     QImage null;
+    QVERIFY(!canViewPixels(null));
     QVERIFY(PixelSpan(null).isEmpty());
     QVERIFY(ConstPixelSpan(std::as_const(null)).isEmpty());
 }
