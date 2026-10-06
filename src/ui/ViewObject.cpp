@@ -113,14 +113,8 @@ bool ViewObject::addChild(ViewObject& child) {
         if (!child.m_removing) {
             child.m_parent->removeChild(child);
         } else {
-            ViewRoot* const oldRoot = child.root();
-            const QRectF oldDamage = child.m_lastPaintBounds.isEmpty() ? child.paintBounds() : child.m_lastPaintBounds;
-            std::erase(child.m_parent->m_children, &child);
-            child.m_parent = nullptr;
-            if (oldRoot != nullptr) {
-                oldRoot->leftTheTree(child);
-                oldRoot->addDamage(oldDamage);
-            }
+            child.detachFromParent();
+            child.m_removing = false;
         }
         if (alive.expired() || selfAlive.expired() || child.m_parent != nullptr ||
             (child.m_root != nullptr && !child.m_removing)) {
@@ -154,17 +148,8 @@ bool ViewObject::removeChild(ViewObject& child) {
         return true;
     }
 
+    child.detachFromParent();
     child.m_removing = false;
-    ViewRoot* const owner = root();
-    const QRectF damage = child.paintBounds();
-
-    std::erase(m_children, &child);
-    child.m_parent = nullptr;
-
-    if (owner != nullptr) {
-        owner->leftTheTree(child);
-        owner->addDamage(damage);
-    }
     return true;
 }
 
@@ -208,12 +193,26 @@ ViewRoot* ViewObject::root() const {
     return top->m_root;
 }
 
+void ViewObject::detachFromParent() {
+    if (m_parent == nullptr) {
+        return;
+    }
+    ViewRoot* const oldRoot = root();
+    const QRectF oldDamage = m_lastPaintBounds.isEmpty() ? paintBounds() : m_lastPaintBounds;
+    std::erase(m_parent->m_children, this);
+    m_parent = nullptr;
+    if (oldRoot != nullptr) {
+        oldRoot->leftTheTree(*this);
+        oldRoot->addDamage(oldDamage);
+    }
+}
+
 void ViewObject::announce(QAccessible::Event event) {
     // Interfaces are made on demand, so nothing is made while no assistive technology listens.
     if (!QAccessible::isActive()) {
         return;
     }
-    if (event != QAccessible::ObjectDestroyed && root() == nullptr) {
+    if (root() == nullptr) {
         return;
     }
     if (m_dying) {

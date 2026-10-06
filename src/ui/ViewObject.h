@@ -95,6 +95,8 @@ class ViewObject {
 
     // The root this view belongs to, through its parents; nullptr when it is in no tree.
     [[nodiscard]] ViewRoot* root() const;
+    // Detaches this view from its parent: removes from parent's children, clears m_parent, and updates the old root.
+    void detachFromParent();
     // Tells assistive technology that this view entered or left the tree, if any of it is listening.
     void announce(QAccessible::Event event);
 

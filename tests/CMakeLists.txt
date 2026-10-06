@@ -200,7 +200,9 @@ ariadshot_add_test(NAME app.signal-bridge
     LABELS unit)
 
 set(QT_NO_PRIVATE_MODULE_WARNING ON)
-find_package(Qt6 REQUIRED COMPONENTS GuiPrivate)
+if(Qt6_VERSION VERSION_GREATER_EQUAL 6.9)
+    find_package(Qt6 REQUIRED COMPONENTS GuiPrivate)
+endif()
 
 ariadshot_add_test(NAME ui.view-root
     SOURCES unit/ui/tst_ViewRoot.cpp

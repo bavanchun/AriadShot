@@ -358,6 +358,8 @@ class ViewRootTest : public QObject {
     void destroyingChildDirectlyDamagesOldBoundsAndAnnouncesDestruction();
     void childRemovalAndReparentingInsideNotificationHandlerIsSafe();
     void topLevelRemovalAndReparentingInsideNotificationHandlerIsSafe();
+    void removingChildFromHolderWithoutRootRecordsNoEvents();
+    void movingViewInsideRemovalHandlerClearsRemovingFlag();
     void hostPresentsContentThroughThePlatformInterfaces();
 };
 
@@ -1369,6 +1371,9 @@ void ViewRootTest::childRemovalAndReparentingInsideNotificationHandlerIsSafe() {
     GroupView& group1 = addGroup(root, {0, 0, 50, 50});
     GroupView& group2 = addGroup(root, {50, 50, 50, 50});
     TestView& child1 = group1.addNested({10, 10, 20, 20});
+    (void)root.takeDamage();
+    root.setFocusOwner(&child1);
+    root.setInputMethodOwner(&child1);
     QAccessibleInterface* child1Node = child1.accessible();
 
     bool handled1 = false;
@@ -1376,6 +1381,8 @@ void ViewRootTest::childRemovalAndReparentingInsideNotificationHandlerIsSafe() {
         if (!handled1 && event->type() == QAccessible::ObjectDestroyed && event->accessibleInterface() == child1Node) {
             handled1 = true;
             QVERIFY(group2.addChild(child1));
+            group2.nested.push_back(std::move(group1.nested.front()));
+            group1.nested.erase(group1.nested.begin());
         }
     };
     QVERIFY(group1.removeChild(child1));
@@ -1383,9 +1390,18 @@ void ViewRootTest::childRemovalAndReparentingInsideNotificationHandlerIsSafe() {
     QVERIFY(group1.children().empty());
     QCOMPARE(group2.children(), (std::vector<ViewObject*>{&child1}));
     QCOMPARE(child1.accessibleParent(), group2.accessible());
+    root.dispatch(QKeyEvent(QEvent::KeyPress, Qt::Key_A, Qt::NoModifier));
+    QCOMPARE(child1.events, Events{});
+    QInputMethodQueryEvent query(Qt::ImEnabled);
+    root.inputMethodQuery(query);
+    QCOMPARE(query.value(Qt::ImEnabled), QVariant(false));
+    QCOMPARE(root.takeDamage(), QRegion(10, 10, 20, 20));
 
+    changes().clear();
     TestView& child2 = group1.addNested({10, 10, 20, 20});
     QAccessibleInterface* child2Node = child2.accessible();
+    QAccessibleInterface* group1Node = group1.accessible();
+    changes().clear();
     bool handled2 = false;
     accessibilityCallback() = [&](QAccessibleEvent* event) {
         if (!handled2 && event->type() == QAccessible::ObjectDestroyed && event->accessibleInterface() == child2Node) {
@@ -1396,6 +1412,7 @@ void ViewRootTest::childRemovalAndReparentingInsideNotificationHandlerIsSafe() {
     QVERIFY(group1.removeChild(child2));
     accessibilityCallback() = nullptr;
     QVERIFY(group1.children().empty());
+    QCOMPARE(changes(), (std::vector<Change>{change(QAccessible::ObjectDestroyed, child2Node, group1Node, 0)}));
 
     TestView& child3 = group1.addNested({10, 10, 20, 20});
     QAccessibleInterface* child3Node = child3.accessible();
@@ -1508,11 +1525,81 @@ void ViewRootTest::topLevelRemovalAndReparentingInsideNotificationHandlerIsSafe(
         if (event->type() == QAccessible::ObjectDestroyed && event->accessibleInterface() == movingViewNode) {
             root.addView(std::move(movingView));
             addViewTerminated = true;
+            QVERIFY(groupForRemoval.children().empty());
+            QCOMPARE(movingViewPtr->accessibleParent(), root.accessible());
         }
     };
     (void)groupForRemoval.removeChild(*movingViewPtr);
     accessibilityCallback() = nullptr;
     QVERIFY(addViewTerminated);
+    QVERIFY(groupForRemoval.children().empty());
+    QCOMPARE(movingViewPtr->accessibleParent(), root.accessible());
+}
+
+void ViewRootTest::removingChildFromHolderWithoutRootRecordsNoEvents() {
+    const ObservedAccessibility observed;
+    GroupView holder({0, 0, 100, 100});
+    TestView& child = holder.addNested({10, 10, 20, 20});
+    changes().clear();
+
+    QVERIFY(holder.removeChild(child));
+    QVERIFY(changes().empty());
+}
+
+void ViewRootTest::movingViewInsideRemovalHandlerClearsRemovingFlag() {
+    ViewRoot root;
+    root.resize({100, 100}, 1.0);
+    const ObservedAccessibility observed;
+
+    // A view moved inside its own removal handler and then destroyed announces its destruction.
+    GroupView& group1 = addGroup(root, {0, 0, 50, 50});
+    GroupView& group2 = addGroup(root, {50, 0, 50, 50});
+    auto moving1 = std::make_unique<TestView>(QRectF{10, 10, 20, 20});
+    TestView* const moving1Ptr = moving1.get();
+    QVERIFY(group1.addChild(*moving1));
+    QAccessibleInterface* moving1Node = moving1->accessible();
+    QAccessibleInterface* group1Node = group1.accessible();
+    QAccessibleInterface* group2Node = group2.accessible();
+
+    changes().clear();
+    bool handled1 = false;
+    accessibilityCallback() = [&](QAccessibleEvent* event) {
+        if (!handled1 && event->type() == QAccessible::ObjectDestroyed && event->accessibleInterface() == moving1Node) {
+            handled1 = true;
+            QVERIFY(group2.addChild(*moving1Ptr));
+            moving1.reset();
+        }
+    };
+    QVERIFY(group1.removeChild(*moving1Ptr));
+    accessibilityCallback() = nullptr;
+    QVERIFY(handled1);
+    QCOMPARE(changes(), (std::vector<Change>{
+                            change(QAccessible::ObjectDestroyed, moving1Node, group1Node, 0),
+                            change(QAccessible::ObjectCreated, moving1Node, group2Node, 0),
+                            change(QAccessible::ObjectDestroyed, moving1Node, group2Node, 0),
+                        }));
+
+    // removeChild on a view moved inside its removal handler succeeds inside the handler.
+    GroupView& group3 = addGroup(root, {0, 50, 50, 50});
+    GroupView& group4 = addGroup(root, {50, 50, 50, 50});
+    TestView& moving2 = group3.addNested({10, 10, 20, 20});
+    QAccessibleInterface* moving2Node = moving2.accessible();
+
+    bool handled2 = false;
+    bool removeSucceeded = false;
+    accessibilityCallback() = [&](QAccessibleEvent* event) {
+        if (!handled2 && event->type() == QAccessible::ObjectDestroyed && event->accessibleInterface() == moving2Node) {
+            handled2 = true;
+            QVERIFY(group4.addChild(moving2));
+            removeSucceeded = group4.removeChild(moving2);
+        }
+    };
+    QVERIFY(group3.removeChild(moving2));
+    accessibilityCallback() = nullptr;
+    QVERIFY(handled2);
+    QVERIFY(removeSucceeded);
+    QVERIFY(group3.children().empty());
+    QVERIFY(group4.children().empty());
 }
 
 void ViewRootTest::hostPresentsContentThroughThePlatformInterfaces() {

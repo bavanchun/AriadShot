@@ -73,19 +73,11 @@ void ViewRoot::resize(QSize size, qreal scale) {
 ViewObject& ViewRoot::addView(std::unique_ptr<ViewObject> view) {
     while (view->m_parent != nullptr) {
         if (view->m_removing) {
-            ViewRoot* const oldRoot = view->root();
-            const QRectF oldDamage = view->m_lastPaintBounds.isEmpty() ? view->paintBounds() : view->m_lastPaintBounds;
-            std::erase(view->m_parent->m_children, view.get());
-            view->m_parent = nullptr;
-            if (oldRoot != nullptr) {
-                oldRoot->leftTheTree(*view);
-                oldRoot->addDamage(oldDamage);
-            }
+            view->detachFromParent();
+            view->m_removing = false;
             break;
         }
-        if (!view->m_parent->removeChild(*view)) {
-            break;
-        }
+        view->m_parent->removeChild(*view);
     }
     ViewObject& added = *m_views.emplace_back(std::move(view));
     added.m_root = this;
