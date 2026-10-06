@@ -7,7 +7,9 @@ target_sources(ariadshot_render PRIVATE
     CanonicalImage.h
     CanonicalImage.cpp
     text/FontSet.h
-    text/FontSet.cpp)
+    text/FontSet.cpp
+    pixel/PixelSpan.h
+    pixel/PixelSpan.cpp)
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     set_target_properties(ariadshot_render PROPERTIES AUTORCC ON)
     target_sources(ariadshot_render PRIVATE resources/fonts/fonts.qrc)

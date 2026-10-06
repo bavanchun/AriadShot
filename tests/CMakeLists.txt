@@ -81,6 +81,11 @@ ariadshot_add_test(NAME render.font-set
     LIBS AriadShot::render
     LABELS unit)
 
+ariadshot_add_test(NAME render.pixel-span
+    SOURCES unit/render/tst_PixelSpan.cpp
+    LIBS AriadShot::render
+    LABELS unit tsan-safe)
+
 ariadshot_add_test(NAME render.smoke-golden
     SOURCES golden/tst_RenderSmoke.cpp
     LIBS AriadShot::render ariadshot_test_support
