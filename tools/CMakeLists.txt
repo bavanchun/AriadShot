@@ -2,4 +2,6 @@
 # SPDX-License-Identifier: GPL-3.0-only
 
 add_subdirectory(imgdiff)
-add_subdirectory(bench)
+if(ARIADSHOT_MEDIA)
+    add_subdirectory(bench)
+endif()
