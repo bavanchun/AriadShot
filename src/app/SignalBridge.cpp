@@ -20,6 +20,8 @@ namespace {
 
 bool makeNonBlockingCloseOnExec(int fd) {
     const int flags = ::fcntl(fd, F_GETFL);
+    // fcntl(2) defines its file status flags as int, so the bitwise or below must stay signed.
+    // NOLINTNEXTLINE(bugprone-signed-bitwise)
     return flags != -1 && ::fcntl(fd, F_SETFL, flags | O_NONBLOCK) == 0 && ::fcntl(fd, F_SETFD, FD_CLOEXEC) == 0;
 }
 
