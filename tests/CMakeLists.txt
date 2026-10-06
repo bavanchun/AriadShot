@@ -81,6 +81,46 @@ ariadshot_add_test(NAME render.font-set
     LIBS AriadShot::render
     LABELS unit)
 
+ariadshot_add_test(NAME render.pixel-span
+    SOURCES unit/render/tst_PixelSpan.cpp
+    LIBS AriadShot::render
+    LABELS unit tsan-safe)
+
+ariadshot_add_test(NAME render.blur
+    SOURCES unit/render/tst_Blur.cpp
+    LIBS AriadShot::render
+    LABELS unit tsan-safe)
+
+ariadshot_add_test(NAME render.pixelate
+    SOURCES unit/render/tst_Pixelate.cpp
+    LIBS AriadShot::render
+    LABELS unit tsan-safe)
+
+ariadshot_add_test(NAME render.shadow
+    SOURCES unit/render/tst_Shadow.cpp
+    LIBS AriadShot::render
+    LABELS unit tsan-safe)
+
+ariadshot_add_test(NAME render.box-blur
+    SOURCES unit/render/tst_BoxBlur.cpp
+    LIBS AriadShot::render
+    LABELS unit tsan-safe)
+
+ariadshot_add_test(NAME render.resample
+    SOURCES unit/render/tst_Resample.cpp
+    LIBS AriadShot::render
+    LABELS unit tsan-safe)
+
+ariadshot_add_test(NAME render.alpha-mask
+    SOURCES unit/render/tst_AlphaMask.cpp
+    LIBS AriadShot::render
+    LABELS unit tsan-safe)
+
+ariadshot_add_test(NAME render.pixel-boundary
+    SOURCES unit/render/tst_PixelBoundary.cpp
+    LABELS unit tsan-safe)
+target_compile_definitions(tst_render_pixel_boundary PRIVATE ARIADSHOT_TEST_SOURCE_DIR="${PROJECT_SOURCE_DIR}/src")
+
 ariadshot_add_test(NAME render.smoke-golden
     SOURCES golden/tst_RenderSmoke.cpp
     LIBS AriadShot::render ariadshot_test_support
