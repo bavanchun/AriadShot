@@ -9,6 +9,7 @@
 #include <QEnterEvent>
 #include <QEvent>
 #include <QPainter>
+#include <QtMath>
 
 #include <algorithm>
 #include <ranges>
@@ -18,9 +19,10 @@ namespace ariadshot::ui {
 
 ViewRoot::~ViewRoot() = default;
 
+// The buffer rounds up: rounding to nearest can leave the last row or column of the surface without pixels.
 void ViewRoot::resize(QSize size, qreal scale) {
     m_surface = QRect(QPoint(), size);
-    m_chrome = render::makeCanonicalImage(QSize(qRound(size.width() * scale), qRound(size.height() * scale)), scale);
+    m_chrome = render::makeCanonicalImage(QSize(qCeil(size.width() * scale), qCeil(size.height() * scale)), scale);
     m_damage = m_surface;
 }
 
@@ -47,9 +49,12 @@ std::unique_ptr<ViewObject> ViewRoot::removeView(ViewObject& view) {
     if (m_inputMethodOwner == removed.get()) {
         m_inputMethodOwner = nullptr;
     }
+    if (m_pointerOwner.holder == removed.get()) {
+        m_pointerOwner = {};
+    }
     // The hovered view object may be the removed one or part of it; it learns that the pointer left before it goes.
     if (m_hovered != nullptr) {
-        setHovered(viewAt(m_pointer));
+        updateHover(true);
     }
     return removed;
 }
@@ -89,21 +94,15 @@ void ViewRoot::dispatch(const QEvent& event) {
     case QEvent::Wheel:
     case QEvent::TabletPress:
     case QEvent::TabletMove:
-    case QEvent::TabletRelease: {
-        m_pointer = static_cast<const QSinglePointEvent&>(event).position();
-        ViewObject* view = viewAt(m_pointer);
-        setHovered(view);
-        if (view != nullptr) {
-            view->handleEvent(event);
-        }
+    case QEvent::TabletRelease:
+        dispatchPointer(static_cast<const QSinglePointEvent&>(event));
         break;
-    }
     case QEvent::Enter:
         m_pointer = static_cast<const QEnterEvent&>(event).position();
-        setHovered(viewAt(m_pointer));
+        updateHover(true);
         break;
     case QEvent::Leave:
-        setHovered(nullptr);
+        updateHover(false);
         break;
     case QEvent::KeyPress:
     case QEvent::KeyRelease:
@@ -126,25 +125,55 @@ void ViewRoot::dispatch(const QEvent& event) {
 // Damage is whole points, rounded outwards so that it never covers less than the change.
 void ViewRoot::addDamage(QRectF area) { m_damage += area.toAlignedRect() & m_surface; }
 
-ViewObject* ViewRoot::viewAt(QPointF point) const {
+ViewRoot::Hit ViewRoot::hitAt(QPointF point) const {
     for (const auto& view : std::views::reverse(m_views)) {
         if (ViewObject* hit = view->hitTest(point)) {
-            return hit;
+            return {.holder = view.get(), .view = hit};
         }
     }
-    return nullptr;
+    return {};
 }
 
-void ViewRoot::setHovered(ViewObject* view) {
-    if (view == m_hovered) {
+void ViewRoot::dispatchPointer(const QSinglePointEvent& event) {
+    const QEvent::Type type = event.type();
+    const bool press =
+        type == QEvent::MouseButtonPress || type == QEvent::MouseButtonDblClick || type == QEvent::TabletPress;
+    const bool release = type == QEvent::MouseButtonRelease || type == QEvent::TabletRelease;
+    const bool held = event.buttons() != Qt::NoButton;
+    m_pointer = event.position();
+    if (!held && !release) {
+        m_pointerOwner = {}; // no button is held, so no drag is going on
+    }
+    updateHover(true);
+    // Hover callbacks can change the tree, so the target is found only now. A wheel turns whatever is under the
+    // pointer.
+    const bool owned = m_pointerOwner.view != nullptr && type != QEvent::Wheel;
+    const Hit target = owned ? m_pointerOwner : hitAt(m_pointer);
+    if (target.view == nullptr) {
         return;
     }
-    if (m_hovered != nullptr) {
-        m_hovered->hoverChanged(false);
+    if (press && m_pointerOwner.view == nullptr) {
+        m_pointerOwner = target;
+    } else if (release && !held) {
+        m_pointerOwner = {};
     }
-    m_hovered = view;
-    if (view != nullptr) {
-        view->hoverChanged(true);
+    target.view->handleEvent(event);
+}
+
+// m_hovered is updated before each callback runs. A callback can remove views, including the one it was called on or
+// the one that is to be entered, so the view to enter is found again after every callback.
+void ViewRoot::updateHover(bool pointerInside) {
+    for (;;) {
+        ViewObject* target = pointerInside ? viewAt(m_pointer) : nullptr;
+        if (target == m_hovered) {
+            return;
+        }
+        if (m_hovered != nullptr) {
+            std::exchange(m_hovered, nullptr)->hoverChanged(false);
+            continue;
+        }
+        m_hovered = target;
+        target->hoverChanged(true);
     }
 }
 
@@ -157,12 +186,12 @@ void ViewRoot::paintChrome(const QRegion& damage) {
     painter.setCompositionMode(QPainter::CompositionMode_Clear);
     painter.fillRect(m_surface, Qt::transparent);
     painter.setCompositionMode(QPainter::CompositionMode_SourceOver);
+    // Every view paints, under the clip: what a view draws outside its geometry is cleared with the damage and has to
+    // come back with it.
     for (const auto& view : m_views) {
-        if (damage.intersects(view->geometry().toAlignedRect())) {
-            painter.save();
-            view->paint(painter);
-            painter.restore();
-        }
+        painter.save();
+        view->paint(painter);
+        painter.restore();
     }
 }
 

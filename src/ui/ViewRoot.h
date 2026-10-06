@@ -15,6 +15,8 @@
 #include <optional>
 #include <vector>
 
+class QSinglePointEvent;
+
 namespace ariadshot::ui {
 
 class ViewObject;
@@ -49,8 +51,11 @@ class ViewRoot : public platform::SurfaceContent {
     // The cursor over a point: the front view object's choice, the arrow when none is there.
     [[nodiscard]] std::optional<Qt::CursorShape> cursorAt(QPointF point) const;
 
-    // SurfaceContent. Pointer, wheel and tablet events go to the view object under the pointer; key and focus events
-    // to the focus owner; input method events to the input method owner. QEvent::Enter must be a QEnterEvent.
+    // SurfaceContent. Pointer, wheel and tablet events go to the view object under the pointer, except that a press
+    // makes the view object it landed on the owner of the pointer until every button is released: its moves and its
+    // release go to it wherever the pointer is (a move with no button held ends a drag whose release was lost). Key
+    // and focus events go to the focus owner; input method events to the input method owner. QEvent::Enter must be a
+    // QEnterEvent.
     [[nodiscard]] std::vector<const QImage*> presentationLayers() const override;
     QRegion takeDamage() override;
     void dispatch(const QEvent& event) override;
@@ -60,9 +65,17 @@ class ViewRoot : public platform::SurfaceContent {
   private:
     friend class ViewObject;
 
+    // What a point hits: the view object this root holds and what its hitTest chose, the holder or a descendant.
+    struct Hit {
+        ViewObject* holder = nullptr;
+        ViewObject* view = nullptr;
+    };
+
     void addDamage(QRectF area);
-    [[nodiscard]] ViewObject* viewAt(QPointF point) const;
-    void setHovered(ViewObject* view);
+    [[nodiscard]] Hit hitAt(QPointF point) const;
+    [[nodiscard]] ViewObject* viewAt(QPointF point) const { return hitAt(point).view; }
+    void dispatchPointer(const QSinglePointEvent& event);
+    void updateHover(bool pointerInside);
     void paintChrome(const QRegion& damage);
 
     std::vector<std::unique_ptr<ViewObject>> m_views; // back to front
@@ -72,6 +85,7 @@ class ViewRoot : public platform::SurfaceContent {
     QRegion m_damage;
     QPointF m_pointer;
     ViewObject* m_hovered = nullptr;
+    Hit m_pointerOwner;
     ViewObject* m_focusOwner = nullptr;
     ViewObject* m_inputMethodOwner = nullptr;
     platform::KeyboardInteractivity m_keyboard = platform::KeyboardInteractivity::None;

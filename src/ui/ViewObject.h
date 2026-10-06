@@ -31,15 +31,17 @@ class ViewObject {
     // Moves or resizes the view; the old and the new area are damaged.
     void setGeometry(QRectF geometry);
 
-    // Paints into the chrome layer, clipped to the damage being repainted.
+    // Paints into the chrome layer. The root calls it for every repaint, clipped to the damage, so a view may paint
+    // outside geometry() (a border, a shadow); whoever changes such pixels reports them with update().
     virtual void paint(QPainter& painter) = 0;
 
     // The view object that receives a pointer event at the point: this one, a descendant, or nullptr to let the view
     // behind take it. The default accepts the points inside geometry().
     virtual ViewObject* hitTest(QPointF point);
     virtual void hoverChanged(bool /*hovered*/) {}
-    // Pointer events reach the view that hitTest() chose, key and focus events the root's focus owner, input method
-    // events its input method owner. Positions are in surface points.
+    // A press makes the view that hitTest() chose the owner of the pointer until every button is released: its moves
+    // and its release come to it wherever the pointer is. Key and focus events reach the root's focus owner, input
+    // method events its input method owner. Positions are in surface points.
     virtual void handleEvent(const QEvent& /*event*/) {}
 
     // The cursor over the point; nullopt hides it because the canvas draws its own.

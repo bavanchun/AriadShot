@@ -18,6 +18,7 @@
 #include <QTest>
 #include <QWheelEvent>
 
+#include <functional>
 #include <memory>
 #include <vector>
 
@@ -41,11 +42,21 @@ class TestView final : public ViewObject {
 
     void paint(QPainter& painter) override {
         ++paintCount;
-        painter.fillRect(geometry(), color);
+        painter.fillRect(paintArea.isNull() ? geometry() : paintArea, color);
     }
     ViewObject* hitTest(QPointF point) override { return passThrough ? nullptr : ViewObject::hitTest(point); }
-    void hoverChanged(bool hovered) override { hovers.push_back(hovered); }
-    void handleEvent(const QEvent& event) override { events.push_back(event.type()); }
+    void hoverChanged(bool hovered) override {
+        hovers.push_back(hovered);
+        if (onHover) {
+            onHover(hovered);
+        }
+    }
+    void handleEvent(const QEvent& event) override {
+        events.push_back(event.type());
+        if (event.isSinglePointEvent()) {
+            positions.push_back(static_cast<const QSinglePointEvent&>(event).position());
+        }
+    }
     std::optional<Qt::CursorShape> cursorAt(QPointF) const override { return cursor; }
     QString accessibleName() const override { return name; }
     QAccessible::Role accessibleRole() const override { return role; }
@@ -54,10 +65,26 @@ class TestView final : public ViewObject {
     QAccessible::Role role = QAccessible::PushButton;
     std::optional<Qt::CursorShape> cursor = Qt::CrossCursor;
     QColor color = Qt::red;
+    QRectF paintArea; // where paint() draws; the geometry when null
     bool passThrough = false;
     int paintCount = 0;
     std::vector<bool> hovers;
     Events events;
+    std::vector<QPointF> positions;
+    std::function<void(bool)> onHover;
+};
+
+// A view object whose hit test answers with a descendant that the root does not hold.
+class ParentView final : public ViewObject {
+  public:
+    ParentView(QRectF area, ViewObject& hitChild) : child(&hitChild) { setGeometry(area); }
+
+    void paint(QPainter&) override {}
+    ViewObject* hitTest(QPointF point) override { return geometry().contains(point) ? child : nullptr; }
+    QString accessibleName() const override { return {}; }
+    QAccessible::Role accessibleRole() const override { return QAccessible::Grouping; }
+
+    ViewObject* child;
 };
 
 TestView& addView(ViewRoot& root, QRectF area) {
@@ -69,6 +96,11 @@ void mouse(ViewRoot& root, QEvent::Type type, QPointF position) {
     const QMouseEvent event(type, position, position, isMove ? Qt::NoButton : Qt::LeftButton,
                             type == QEvent::MouseButtonPress ? Qt::LeftButton : Qt::NoButton, Qt::NoModifier);
     root.dispatch(event);
+}
+
+// A move with the left button held.
+void drag(ViewRoot& root, QPointF position) {
+    root.dispatch(QMouseEvent(QEvent::MouseMove, position, position, Qt::NoButton, Qt::LeftButton, Qt::NoModifier));
 }
 
 // The host side of the platform interfaces: it shows what the content reports.
@@ -113,15 +145,23 @@ class ViewRootTest : public QObject {
 
   private Q_SLOTS:
     void pointerEventsGoToTheFrontmostViewUnderThePointer();
+    void pointerOwnerReceivesTheDragAndReleaseOutsideItsBounds();
+    void moveWithNoButtonHeldEndsAStaleDrag();
+    void removingThePointerOwnerEndsTheDrag();
+    void removingTheHolderOfAPointerOwnerEndsTheDrag();
     void passThroughViewLetsTheViewBehindReceiveTheEvent();
     void wheelAndTabletEventsRouteLikeMouseEvents();
     void hoverFollowsThePointer();
+    void viewRemovingItselfWhenHoverEndsIsNotNotifiedTwice();
+    void pointerEventSkipsAViewRemovedByAHoverCallback();
     void keyAndFocusEventsGoToTheFocusOwner();
     void inputMethodEventsGoToTheInputMethodOwner();
     void removedViewIsForgotten();
     void updateAccumulatesDamageUntilTaken();
     void layersAreCanonicalLayersThenChrome();
+    void chromeBufferCoversTheSurfaceAtFractionalScale();
     void chromeLayerIsRepaintedOverTheDamageOnly();
+    void chromeIsRepaintedOverViewsPaintingOutsideTheirGeometry();
     void cursorFollowsTheViewUnderThePointer();
     void keyboardModeIsReported();
     void viewObjectExposesAccessibleNameAndRole();
@@ -134,11 +174,74 @@ void ViewRootTest::pointerEventsGoToTheFrontmostViewUnderThePointer() {
     TestView& front = addView(root, {50, 50, 100, 100});
 
     mouse(root, QEvent::MouseButtonPress, {75, 75});
+    mouse(root, QEvent::MouseButtonRelease, {75, 75});
+    mouse(root, QEvent::MouseButtonPress, {10, 10});
     mouse(root, QEvent::MouseButtonRelease, {10, 10});
     mouse(root, QEvent::MouseMove, {500, 500});
 
-    QCOMPARE(front.events, Events{QEvent::MouseButtonPress});
-    QCOMPARE(back.events, Events{QEvent::MouseButtonRelease});
+    QCOMPARE(front.events, (Events{QEvent::MouseButtonPress, QEvent::MouseButtonRelease}));
+    QCOMPARE(back.events, (Events{QEvent::MouseButtonPress, QEvent::MouseButtonRelease}));
+}
+
+// The view that took the press keeps the drag and the release wherever the pointer is: ToolbarButtonView forwards
+// mouseDragged and mouseUp to the view that got mouseDown, and its mouseUp clears the pressed state even outside the
+// bounds (macshot/UI/Toolbar/ToolbarButtonView.swift:268-295@b4d4f3a).
+void ViewRootTest::pointerOwnerReceivesTheDragAndReleaseOutsideItsBounds() {
+    ViewRoot root;
+    TestView& button = addView(root, {0, 0, 50, 50});
+    TestView& other = addView(root, {60, 0, 50, 50});
+
+    mouse(root, QEvent::MouseButtonPress, {10, 10});
+    drag(root, {70, 10});
+    mouse(root, QEvent::MouseButtonRelease, {500, 500});
+
+    QCOMPARE(button.events, (Events{QEvent::MouseButtonPress, QEvent::MouseMove, QEvent::MouseButtonRelease}));
+    QCOMPARE(button.positions, (std::vector<QPointF>{{10, 10}, {70, 10}, {500, 500}}));
+    QVERIFY(other.events.empty());
+
+    mouse(root, QEvent::MouseMove, {70, 10});
+    QCOMPARE(other.events, Events{QEvent::MouseMove});
+    QCOMPARE(button.events.size(), std::size_t{3});
+}
+
+void ViewRootTest::moveWithNoButtonHeldEndsAStaleDrag() {
+    ViewRoot root;
+    TestView& button = addView(root, {0, 0, 50, 50});
+    TestView& other = addView(root, {60, 0, 50, 50});
+
+    mouse(root, QEvent::MouseButtonPress, {10, 10});
+    mouse(root, QEvent::MouseMove, {70, 10}); // the release was lost: no button is held any more
+
+    QCOMPARE(button.events, Events{QEvent::MouseButtonPress});
+    QCOMPARE(other.events, Events{QEvent::MouseMove});
+}
+
+void ViewRootTest::removingThePointerOwnerEndsTheDrag() {
+    ViewRoot root;
+    TestView& behind = addView(root, {0, 0, 100, 100});
+    TestView& owner = addView(root, {10, 10, 20, 20});
+
+    mouse(root, QEvent::MouseButtonPress, {15, 15});
+    const std::unique_ptr<ViewObject> removed = root.removeView(owner);
+    mouse(root, QEvent::MouseButtonRelease, {15, 15});
+
+    QCOMPARE(owner.events, Events{QEvent::MouseButtonPress});
+    QCOMPARE(behind.events, Events{QEvent::MouseButtonRelease});
+}
+
+void ViewRootTest::removingTheHolderOfAPointerOwnerEndsTheDrag() {
+    ViewRoot root;
+    TestView& behind = addView(root, {0, 0, 100, 100});
+    TestView child({0, 0, 0, 0});
+    ViewObject& holder = root.addView(std::make_unique<ParentView>(QRectF(10, 10, 20, 20), child));
+
+    mouse(root, QEvent::MouseButtonPress, {15, 15});
+    const std::unique_ptr<ViewObject> removed = root.removeView(holder);
+    drag(root, {70, 70});
+
+    QCOMPARE(child.events, Events{QEvent::MouseButtonPress});
+    QCOMPARE(child.hovers, (std::vector<bool>{true, false}));
+    QCOMPARE(behind.events, Events{QEvent::MouseMove});
 }
 
 void ViewRootTest::passThroughViewLetsTheViewBehindReceiveTheEvent() {
@@ -162,8 +265,8 @@ void ViewRootTest::wheelAndTabletEventsRouteLikeMouseEvents() {
 
     root.dispatch(QWheelEvent(at, at, {}, {0, 120}, Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false));
     for (const QEvent::Type type : {QEvent::TabletPress, QEvent::TabletMove, QEvent::TabletRelease}) {
-        root.dispatch(
-            QTabletEvent(type, &stylus, at, at, 0.5, 0, 0, 0, 0, 0, Qt::NoModifier, Qt::LeftButton, Qt::LeftButton));
+        const Qt::MouseButtons held = type == QEvent::TabletRelease ? Qt::NoButton : Qt::LeftButton;
+        root.dispatch(QTabletEvent(type, &stylus, at, at, 0.5, 0, 0, 0, 0, 0, Qt::NoModifier, Qt::LeftButton, held));
     }
 
     QCOMPARE(view.events, (Events{QEvent::Wheel, QEvent::TabletPress, QEvent::TabletMove, QEvent::TabletRelease}));
@@ -189,6 +292,48 @@ void ViewRootTest::hoverFollowsThePointer() {
     QCOMPARE(first.hovers, (std::vector<bool>{true, false, true}));
     root.dispatch(QEvent(QEvent::Leave));
     QCOMPARE(first.hovers, (std::vector<bool>{true, false, true, false}));
+}
+
+void ViewRootTest::viewRemovingItselfWhenHoverEndsIsNotNotifiedTwice() {
+    ViewRoot root;
+    TestView& first = addView(root, {0, 0, 50, 50});
+    TestView& second = addView(root, {60, 0, 50, 50});
+    std::unique_ptr<ViewObject> removed;
+    first.onHover = [&](bool hovered) {
+        if (!hovered && !removed) {
+            removed = root.removeView(first);
+        }
+    };
+    mouse(root, QEvent::MouseMove, {10, 10});
+
+    mouse(root, QEvent::MouseMove, {70, 10});
+
+    QVERIFY(removed != nullptr);
+    QCOMPARE(first.hovers, (std::vector<bool>{true, false}));
+    QCOMPARE(second.hovers, std::vector<bool>{true});
+    QCOMPARE(second.events, Events{QEvent::MouseMove});
+    mouse(root, QEvent::MouseMove, {500, 500});
+    QCOMPARE(second.hovers, (std::vector<bool>{true, false}));
+}
+
+void ViewRootTest::pointerEventSkipsAViewRemovedByAHoverCallback() {
+    ViewRoot root;
+    TestView& back = addView(root, {0, 0, 100, 100});
+    TestView& front = addView(root, {0, 0, 100, 100});
+    std::unique_ptr<ViewObject> removed;
+    front.onHover = [&](bool hovered) {
+        if (hovered && !removed) {
+            removed = root.removeView(front);
+        }
+    };
+
+    mouse(root, QEvent::MouseButtonPress, {10, 10});
+
+    QVERIFY(removed != nullptr);
+    QVERIFY(front.events.empty());
+    QCOMPARE(front.hovers, (std::vector<bool>{true, false}));
+    QCOMPARE(back.hovers, std::vector<bool>{true});
+    QCOMPARE(back.events, Events{QEvent::MouseButtonPress});
 }
 
 void ViewRootTest::keyAndFocusEventsGoToTheFocusOwner() {
@@ -287,30 +432,60 @@ void ViewRootTest::layersAreCanonicalLayersThenChrome() {
     QCOMPARE(root.takeDamage(), QRegion(0, 0, 20, 10));
 }
 
+// The buffer must cover the whole surface: 101 points at 1.25 is 126.25 pixels, and 126 pixels would stop at 100.8
+// points (https://doc.qt.io/qt-6.8/highdpi.html: logical size is pixels over device pixel ratio).
+void ViewRootTest::chromeBufferCoversTheSurfaceAtFractionalScale() {
+    ViewRoot root;
+
+    root.resize({101, 51}, 1.25);
+
+    const QImage& chrome = *root.presentationLayers().back();
+    QCOMPARE(chrome.size(), QSize(127, 64));
+    QCOMPARE(chrome.devicePixelRatio(), 1.25);
+    QVERIFY(chrome.deviceIndependentSize().width() >= 101);
+    QVERIFY(chrome.deviceIndependentSize().height() >= 51);
+}
+
 void ViewRootTest::chromeLayerIsRepaintedOverTheDamageOnly() {
     ViewRoot root;
     root.resize({100, 100}, 1.0);
     TestView& first = addView(root, {10, 10, 20, 20});
     (void)root.takeDamage();
     const QImage& chrome = *root.presentationLayers().back();
-    QCOMPARE(first.paintCount, 1);
     QCOMPARE(chrome.pixelColor(15, 15), QColor(Qt::red));
     QCOMPARE(chrome.pixelColor(50, 50).alpha(), 0);
 
     TestView& second = addView(root, {60, 60, 10, 10});
     second.color = Qt::green;
+    first.color = Qt::blue; // no update() for the first view: the clip keeps the repaint away from it
     (void)root.takeDamage();
-    QCOMPARE(first.paintCount, 1);
-    QCOMPARE(second.paintCount, 1);
     QCOMPARE(chrome.pixelColor(65, 65), QColor(Qt::green));
+    QCOMPARE(chrome.pixelColor(15, 15), QColor(Qt::red));
 
-    first.color = Qt::blue;
     first.update(first.geometry());
     (void)root.takeDamage();
-    QCOMPARE(first.paintCount, 2);
     QCOMPARE(chrome.pixelColor(15, 15), QColor(Qt::blue));
+    QCOMPARE(chrome.pixelColor(65, 65), QColor(Qt::green));
+    const int paints = first.paintCount;
+    QVERIFY(root.takeDamage().isEmpty());
+    QCOMPARE(first.paintCount, paints);
+}
+
+// paint() is not confined to geometry(): a border or a shadow lies outside the hit box, and repainting that area has to
+// bring the stroke back after it is cleared.
+void ViewRootTest::chromeIsRepaintedOverViewsPaintingOutsideTheirGeometry() {
+    ViewRoot root;
+    root.resize({100, 100}, 1.0);
+    TestView& view = addView(root, {40, 40, 20, 20});
+    view.paintArea = {10, 40, 20, 20};
     (void)root.takeDamage();
-    QCOMPARE(first.paintCount, 2);
+    const QImage& chrome = *root.presentationLayers().back();
+    QCOMPARE(chrome.pixelColor(15, 45), QColor(Qt::red));
+
+    view.update({10, 40, 20, 20});
+    (void)root.takeDamage();
+
+    QCOMPARE(chrome.pixelColor(15, 45), QColor(Qt::red));
 }
 
 void ViewRootTest::cursorFollowsTheViewUnderThePointer() {
