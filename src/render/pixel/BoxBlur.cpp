@@ -62,7 +62,7 @@ void threePasses(std::span<float> line, std::span<float> spare, const std::array
 } // namespace
 
 QImage boxBlur(const QImage& source, const std::array<int, 3>& radii) {
-    if (std::ranges::any_of(radii, [](int radius) { return radius < 0; })) {
+    if (std::any_of(radii.begin(), radii.end(), [](int radius) { return radius < 0; })) {
         return {};
     }
     const ConstPixelSpan input(source);
@@ -97,7 +97,7 @@ QImage boxBlur(const QImage& source, const std::array<int, 3>& radii) {
             unpackPixel(row[x], rowLine.subspan(x * kPixelChannels).first<kPixelChannels>());
         }
         threePasses(rowLine, rowSpare, radii);
-        std::ranges::copy(rowSpare, pixelAt(0, y));
+        std::copy(rowSpare.begin(), rowSpare.end(), pixelAt(0, y));
     }
 
     // Columns: gather from the plane, blur, put the result back.
