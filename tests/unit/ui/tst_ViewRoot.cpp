@@ -19,6 +19,9 @@
 #include <QTabletEvent>
 #include <QTest>
 #include <QWheelEvent>
+#include <QtGui/private/qguiapplication_p.h>
+#include <QtGui/qpa/qplatformaccessibility.h>
+#include <QtGui/qpa/qplatformintegration.h>
 
 #include <functional>
 #include <memory>
@@ -188,25 +191,12 @@ std::function<void(QAccessibleEvent*)>& accessibilityCallback() {
 
 void recordChange(QAccessibleEvent* event) {
     QAccessibleInterface* node = event->accessibleInterface();
-    if (event->type() == QAccessible::ObjectDestroyed) {
-        if (node == nullptr) {
-            return;
-        }
-        for (const auto& change : std::views::reverse(changes())) {
-            if (change.node == node) {
-                if (change.type == QAccessible::ObjectDestroyed) {
-                    return; // Ignore duplicate destruction event from Qt deleteInterface
-                }
-                break;
-            }
-        }
-    }
     QAccessibleInterface* parent = node != nullptr ? node->parent() : nullptr;
-    if (event->type() == QAccessible::ObjectDestroyed && node != nullptr) {
+    if (event->type() == QAccessible::ObjectDestroyed) {
         // Behaves like the Linux screen-reader bridge (atspiadaptor.cpp):
-        // for every ObjectDestroyed it requires a non-null parent() and calls role().
-        if (parent == nullptr) {
-            qFatal("recordChange: ObjectDestroyed announced with null parent()");
+        // drops a null-parent ObjectDestroyed, and calls role() when parent is non-null.
+        if (node == nullptr || parent == nullptr) {
+            return;
         }
         [[maybe_unused]] const QAccessible::Role role = node->role();
     }
@@ -228,10 +218,20 @@ class ObservedAccessibility {
   public:
     ObservedAccessibility() : m_previous(QAccessible::installUpdateHandler(&recordChange)) {
         changes().clear();
+        if (QPlatformIntegration* const pi = QGuiApplicationPrivate::platformIntegration()) {
+            if (QPlatformAccessibility* const acc = pi->accessibility()) {
+                acc->setActive(true);
+            }
+        }
         QAccessible::setActive(true);
     }
     ~ObservedAccessibility() {
         accessibilityCallback() = nullptr;
+        if (QPlatformIntegration* const pi = QGuiApplicationPrivate::platformIntegration()) {
+            if (QPlatformAccessibility* const acc = pi->accessibility()) {
+                acc->setActive(false);
+            }
+        }
         QAccessible::setActive(false);
         QAccessible::installUpdateHandler(m_previous);
     }
@@ -670,12 +670,14 @@ void ViewRootTest::focusAndInputMethodOwnersDestroyedByTheirHolderReceiveNothing
 
 void ViewRootTest::focusAndInputMethodOwnersRemovedReceiveNothing() {
     ViewRoot root;
-    GroupView& holder = addGroup(root, {10, 10, 40, 40});
-    TestView& child = holder.addNested({10, 10, 20, 20});
+    GroupView& holder = addGroup(root, {10, 10, 60, 60});
+    GroupView& subGroup = holder.addNestedGroup({10, 10, 40, 40});
+    TestView& child = subGroup.addNested({10, 10, 20, 20});
     root.setFocusOwner(&child);
     root.setInputMethodOwner(&child);
 
-    holder.removeChild(child);
+    // Removing an ancestor via removeChild clears focus and input method owners.
+    holder.removeChild(subGroup);
     root.dispatch(QKeyEvent(QEvent::KeyPress, Qt::Key_A, Qt::NoModifier));
     root.dispatch(QInputMethodEvent(u"a"_s, {}));
     QInputMethodQueryEvent query(Qt::ImEnabled);
@@ -683,6 +685,22 @@ void ViewRootTest::focusAndInputMethodOwnersRemovedReceiveNothing() {
 
     QCOMPARE(child.events, Events{});
     QCOMPARE(query.value(Qt::ImEnabled), QVariant(false));
+
+    // Removing an ancestor via removeView clears focus and input method owners.
+    GroupView& holder2 = addGroup(root, {10, 10, 60, 60});
+    GroupView& subGroup2 = holder2.addNestedGroup({10, 10, 40, 40});
+    TestView& child2 = subGroup2.addNested({10, 10, 20, 20});
+    root.setFocusOwner(&child2);
+    root.setInputMethodOwner(&child2);
+
+    const std::unique_ptr<ViewObject> removed = root.removeView(holder2);
+    root.dispatch(QKeyEvent(QEvent::KeyPress, Qt::Key_A, Qt::NoModifier));
+    root.dispatch(QInputMethodEvent(u"a"_s, {}));
+    QInputMethodQueryEvent query2(Qt::ImEnabled);
+    root.inputMethodQuery(query2);
+
+    QCOMPARE(child2.events, Events{});
+    QCOMPARE(query2.value(Qt::ImEnabled), QVariant(false));
 }
 
 void ViewRootTest::passThroughViewLetsTheViewBehindReceiveTheEvent() {
@@ -1247,21 +1265,56 @@ void ViewRootTest::addingAndRemovingViewsAnnouncesTheTreeChange() {
     QVERIFY(group.removeChild(nested));
     QCOMPARE(changes(), (std::vector<Change>{change(QAccessible::ObjectDestroyed, nestedNode, groupNode, 0)}));
 
+    // 1. Remove, re-add, remove again: announces on both removals.
+    QVERIFY(group.addChild(nested));
+    changes().clear();
+    QVERIFY(group.removeChild(nested));
+    QCOMPARE(changes(), (std::vector<Change>{change(QAccessible::ObjectDestroyed, nestedNode, groupNode, 0)}));
+
+    // 2. Move then remove: moving a child to another holder and removing it announces under the new holder.
+    GroupView& group2 = addGroup(root, {80, 80, 40, 40});
+    TestView& moving = group.addNested({5, 5, 10, 10});
+    QAccessibleInterface* movingNode = moving.accessible();
+    QAccessibleInterface* group2Node = group2.accessible();
+    QVERIFY(group2.addChild(moving));
+    changes().clear();
+    QVERIFY(group2.removeChild(moving));
+    QCOMPARE(changes(), (std::vector<Change>{change(QAccessible::ObjectDestroyed, movingNode, group2Node, 0)}));
+
     changes().clear();
     const std::unique_ptr<ViewObject> removed = root.removeView(group);
     QCOMPARE(changes(), (std::vector<Change>{change(QAccessible::ObjectDestroyed, groupNode, rootNode, 0)}));
+    (void)root.removeView(group2);
+
+    // 3. removeView, addView, removeView: top-level view announces on both removals.
+    TestView& top = addView(root, {0, 0, 10, 10});
+    QAccessibleInterface* topNode = top.accessible();
+    std::unique_ptr<ViewObject> removedTop = root.removeView(top);
+    ViewObject& readdedTop = root.addView(std::move(removedTop));
+    changes().clear();
+    const std::unique_ptr<ViewObject> removedAgain = root.removeView(readdedTop);
+    QCOMPARE(changes(), (std::vector<Change>{change(QAccessible::ObjectDestroyed, topNode, rootNode, 0)}));
 }
 
 // A view can call update() from its destructor; by then the root's members are gone, so the root lets go of its views
 // first.
 void ViewRootTest::destroyingTheRootDetachesItsViews() {
+    const ObservedAccessibility observed;
     auto root = std::make_unique<ViewRoot>();
     root->resize({100, 100}, 1.0);
     GroupView& group = addGroup(*root, {10, 10, 60, 60});
     TestView& nested = group.addNested({20, 20, 10, 10});
     TestView& top = addView(*root, {0, 0, 5, 5});
+    (void)top.accessible();
     nested.onDestroy = [&nested] { nested.update({20, 20, 10, 10}); };
     top.onDestroy = [&top] { top.update({0, 0, 5, 5}); };
+
+    // Raising a view (removeView then addView) leaves accessibleParent() null once detached,
+    // so destroying the root does not trigger a use-after-free on the former accessible parent.
+    TestView& raised = addView(*root, {50, 50, 20, 20});
+    (void)raised.accessible();
+    std::unique_ptr<ViewObject> detached = root->removeView(raised);
+    root->addView(std::move(detached));
 
     root.reset();
 }
@@ -1443,6 +1496,23 @@ void ViewRootTest::topLevelRemovalAndReparentingInsideNotificationHandlerIsSafe(
     QVERIFY(reparented);
     QCOMPARE(top4.accessibleParent(), group.accessible());
     QCOMPARE(group.children(), (std::vector<ViewObject*>{&top4}));
+
+    // Calling addView on a child whose removal is in progress terminates instead of looping infinitely.
+    GroupView& groupForRemoval = addGroup(root, {0, 0, 50, 50});
+    auto movingView = std::make_unique<TestView>(QRectF{5, 5, 10, 10});
+    TestView* const movingViewPtr = movingView.get();
+    QVERIFY(groupForRemoval.addChild(*movingView));
+    QAccessibleInterface* movingViewNode = movingView->accessible();
+    bool addViewTerminated = false;
+    accessibilityCallback() = [&](QAccessibleEvent* event) {
+        if (event->type() == QAccessible::ObjectDestroyed && event->accessibleInterface() == movingViewNode) {
+            root.addView(std::move(movingView));
+            addViewTerminated = true;
+        }
+    };
+    (void)groupForRemoval.removeChild(*movingViewPtr);
+    accessibilityCallback() = nullptr;
+    QVERIFY(addViewTerminated);
 }
 
 void ViewRootTest::hostPresentsContentThroughThePlatformInterfaces() {

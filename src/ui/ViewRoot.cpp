@@ -72,7 +72,20 @@ void ViewRoot::resize(QSize size, qreal scale) {
 
 ViewObject& ViewRoot::addView(std::unique_ptr<ViewObject> view) {
     while (view->m_parent != nullptr) {
-        view->m_parent->removeChild(*view);
+        if (view->m_removing) {
+            ViewRoot* const oldRoot = view->root();
+            const QRectF oldDamage = view->m_lastPaintBounds.isEmpty() ? view->paintBounds() : view->m_lastPaintBounds;
+            std::erase(view->m_parent->m_children, view.get());
+            view->m_parent = nullptr;
+            if (oldRoot != nullptr) {
+                oldRoot->leftTheTree(*view);
+                oldRoot->addDamage(oldDamage);
+            }
+            break;
+        }
+        if (!view->m_parent->removeChild(*view)) {
+            break;
+        }
     }
     ViewObject& added = *m_views.emplace_back(std::move(view));
     added.m_root = this;
@@ -94,9 +107,7 @@ std::unique_ptr<ViewObject> ViewRoot::removeView(ViewObject& view) {
     view.m_removing = true;
     const std::weak_ptr<void> alive = view.m_lifetime;
 
-    if (view.m_accessibleId != 0 && !view.m_destroyedAnnounced) {
-        view.announce(QAccessible::ObjectDestroyed);
-    }
+    view.announce(QAccessible::ObjectDestroyed);
     if (alive.expired()) {
         return nullptr;
     }
@@ -110,7 +121,6 @@ std::unique_ptr<ViewObject> ViewRoot::removeView(ViewObject& view) {
     std::unique_ptr<ViewObject> removed = std::move(*held);
     m_views.erase(held);
     removed->m_removing = false;
-    removed->m_formerAccessibleParent = accessible();
     removed->m_root = nullptr;
     addDamage(removed->paintBounds());
     leftTheTree(*removed);

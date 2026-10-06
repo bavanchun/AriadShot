@@ -199,9 +199,12 @@ ariadshot_add_test(NAME app.signal-bridge
     LIBS AriadShot::app
     LABELS unit)
 
+set(QT_NO_PRIVATE_MODULE_WARNING ON)
+find_package(Qt6 REQUIRED COMPONENTS GuiPrivate)
+
 ariadshot_add_test(NAME ui.view-root
     SOURCES unit/ui/tst_ViewRoot.cpp
-    LIBS AriadShot::ui
+    LIBS AriadShot::ui Qt6::GuiPrivate
     LABELS unit)
 
 # --- Tests of the build system and the repository scripts ------------------------------------------------------------

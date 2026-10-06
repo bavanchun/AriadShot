@@ -101,7 +101,6 @@ class ViewObject {
     QRectF m_geometry;
     ViewRoot* m_root = nullptr; // the holder of a top-level view
     ViewObject* m_parent = nullptr;
-    QAccessibleInterface* m_formerAccessibleParent = nullptr;
     std::vector<ViewObject*> m_children;
     QAccessible::Id m_accessibleId = 0;
     // Lets whoever points at a view without owning it (the root's owners of pointer, focus and input method, and the
@@ -110,7 +109,6 @@ class ViewObject {
     QRectF m_lastPaintBounds;
     bool m_dying = false;
     bool m_removing = false;
-    bool m_destroyedAnnounced = false;
 };
 
 } // namespace ariadshot::ui

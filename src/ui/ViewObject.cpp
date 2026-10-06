@@ -60,7 +60,7 @@ class ViewObjectAccessible final : public QAccessibleInterface {
 ViewObject::~ViewObject() {
     m_dying = true;
     if (m_parent != nullptr) {
-        if (m_accessibleId != 0 && !m_destroyedAnnounced) {
+        if (!m_removing) {
             announce(QAccessible::ObjectDestroyed);
         }
         if (ViewRoot* const owner = root()) {
@@ -68,15 +68,13 @@ ViewObject::~ViewObject() {
             owner->addDamage(m_lastPaintBounds.isEmpty() ? m_geometry : m_lastPaintBounds);
         }
         std::erase(m_parent->m_children, this);
-        m_formerAccessibleParent = m_parent->accessible();
         m_parent = nullptr;
     } else if (m_root != nullptr) {
-        if (m_accessibleId != 0 && !m_destroyedAnnounced) {
+        if (!m_removing) {
             announce(QAccessible::ObjectDestroyed);
         }
         m_root->leftTheTree(*this);
         m_root->addDamage(m_lastPaintBounds.isEmpty() ? m_geometry : m_lastPaintBounds);
-        m_formerAccessibleParent = m_root->accessible();
         m_root = nullptr;
     }
     for (ViewObject* child : m_children) {
@@ -115,8 +113,14 @@ bool ViewObject::addChild(ViewObject& child) {
         if (!child.m_removing) {
             child.m_parent->removeChild(child);
         } else {
+            ViewRoot* const oldRoot = child.root();
+            const QRectF oldDamage = child.m_lastPaintBounds.isEmpty() ? child.paintBounds() : child.m_lastPaintBounds;
             std::erase(child.m_parent->m_children, &child);
             child.m_parent = nullptr;
+            if (oldRoot != nullptr) {
+                oldRoot->leftTheTree(child);
+                oldRoot->addDamage(oldDamage);
+            }
         }
         if (alive.expired() || selfAlive.expired() || child.m_parent != nullptr ||
             (child.m_root != nullptr && !child.m_removing)) {
@@ -142,9 +146,7 @@ bool ViewObject::removeChild(ViewObject& child) {
     const std::weak_ptr<void> alive = child.m_lifetime;
     const std::weak_ptr<void> selfAlive = m_lifetime;
 
-    if (child.m_accessibleId != 0 && !child.m_destroyedAnnounced) {
-        child.announce(QAccessible::ObjectDestroyed);
-    }
+    child.announce(QAccessible::ObjectDestroyed);
     if (alive.expired() || selfAlive.expired() || child.m_parent != this) {
         if (!alive.expired()) {
             child.m_removing = false;
@@ -157,7 +159,6 @@ bool ViewObject::removeChild(ViewObject& child) {
     const QRectF damage = child.paintBounds();
 
     std::erase(m_children, &child);
-    child.m_formerAccessibleParent = accessible();
     child.m_parent = nullptr;
 
     if (owner != nullptr) {
@@ -183,7 +184,7 @@ QAccessibleInterface* ViewObject::accessibleParent() const {
     if (m_root != nullptr) {
         return m_root->accessible();
     }
-    return m_formerAccessibleParent;
+    return nullptr;
 }
 
 QRect ViewObject::screenRect() const {
@@ -208,21 +209,23 @@ ViewRoot* ViewObject::root() const {
 }
 
 void ViewObject::announce(QAccessible::Event event) {
-    if (event == QAccessible::ObjectDestroyed) {
-        m_destroyedAnnounced = true;
-        if (m_accessibleId == 0) {
-            return;
-        }
-        if (QAccessibleInterface* node = QAccessible::accessibleInterface(m_accessibleId)) {
-            QAccessibleEvent change(node, event);
-            QAccessible::updateAccessibility(&change);
+    // Interfaces are made on demand, so nothing is made while no assistive technology listens.
+    if (!QAccessible::isActive()) {
+        return;
+    }
+    if (event != QAccessible::ObjectDestroyed && root() == nullptr) {
+        return;
+    }
+    if (m_dying) {
+        if (m_accessibleId != 0) {
+            if (QAccessibleInterface* const node = QAccessible::accessibleInterface(m_accessibleId)) {
+                QAccessibleEvent change(node, event);
+                QAccessible::updateAccessibility(&change);
+            }
         }
         return;
     }
-    if (root() == nullptr) {
-        return;
-    }
-    if (QAccessibleInterface* node = accessible()) {
+    if (QAccessibleInterface* const node = accessible()) {
         QAccessibleEvent change(node, event);
         QAccessible::updateAccessibility(&change);
     }
