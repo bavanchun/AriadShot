@@ -35,7 +35,9 @@ struct ShadowParameters {
 
 // Paints the shadow cast by the alpha of `caster` placed at `origin`: a black layer of that alpha times
 // shadow.alpha, blurred, and moved down by shadow.offset (a fraction of a pixel mixes two rows). The caster itself
-// is not painted. Usable values are finite, alpha in [0, 1], offset and blur from 0 to one million points.
+// is not painted. Usable values are finite, alpha in [0, 1], offset and blur not negative and, multiplied by the
+// canvas's device pixel ratio, at most one million pixels; a caster at any position, however far from the canvas, is
+// usable and paints nothing.
 [[nodiscard]] bool paintShadow(QImage& canvas, const QImage& caster, QPoint origin, const ShadowParameters& shadow);
 
 // MacShot's rounded mode (macshot/Services/BeautifyRenderer.swift:538-563@b4d4f3a): the ambient shadow and the image,

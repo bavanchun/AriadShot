@@ -12,6 +12,7 @@
 #include <QTest>
 
 #include <algorithm>
+#include <climits>
 #include <cmath>
 #include <limits>
 
@@ -129,6 +130,12 @@ class ShadowTest : public QObject {
     void aShadowRunningOffTheCanvasMatchesTheSameShadowOnALargerCanvas();
     void refusesUnusableInput_data();
     void refusesUnusableInput();
+    void originsAtTheLimitsOfAnIntPaintNothingAndAreNotAnError_data();
+    void originsAtTheLimitsOfAnIntPaintNothingAndAreNotAnError();
+    void refusesValuesThatOverflowAfterScaling_data();
+    void refusesValuesThatOverflowAfterScaling();
+    void acceptsAScaledOffsetExactlyAtTheLimit();
+    void everyPainterRefusesAShadowThatOverflowsAfterScaling();
     void roundedModePaintsAmbientThenContactThenTheCrispImage();
     void snappedWindowPaintsContactThenAmbientThenTheCrispImage();
     void windowBodyPaintsContactThenAmbientUnderAnOpaqueBody();
@@ -300,6 +307,100 @@ void ShadowTest::refusesUnusableInput() {
 
     const QImage before = canvas.copy();
     QVERIFY(!paintShadow(canvas, caster, QPoint(2, 2), shadow));
+    QCOMPARE(canvas, before);
+}
+
+void ShadowTest::originsAtTheLimitsOfAnIntPaintNothingAndAreNotAnError_data() {
+    QTest::addColumn<QPoint>("origin");
+
+    // A shadow whose caster lies this far from the canvas is entirely off it: nothing is painted and that is not an
+    // error. The caster's position minus the blur margin, and its position plus its size, leave the range of an int.
+    QTest::newRow("smallest x") << QPoint(INT_MIN, 10);
+    QTest::newRow("largest x") << QPoint(INT_MAX, 10);
+    QTest::newRow("smallest y") << QPoint(10, INT_MIN);
+    QTest::newRow("largest y") << QPoint(10, INT_MAX);
+    QTest::newRow("smallest x and y") << QPoint(INT_MIN, INT_MIN);
+    QTest::newRow("largest x and y") << QPoint(INT_MAX, INT_MAX);
+    QTest::newRow("smallest x, largest y") << QPoint(INT_MIN, INT_MAX);
+    QTest::newRow("largest x, smallest y") << QPoint(INT_MAX, INT_MIN);
+    QTest::newRow("a few short of the smallest") << QPoint(INT_MIN + 5, INT_MIN + 5);
+    QTest::newRow("a few short of the largest") << QPoint(INT_MAX - 5, INT_MAX - 5);
+}
+
+void ShadowTest::originsAtTheLimitsOfAnIntPaintNothingAndAreNotAnError() {
+    QFETCH(QPoint, origin);
+
+    const QImage caster = filledImage(QSize(40, 40), kTranslucentWhite);
+    const QImage blank = makeCanonicalImage(QSize(30, 30), 1.0);
+    // The window body's rectangle is given by its corners: its size and bottom right must not leave the range of an int
+    // either.
+    const QPoint bottomRight(static_cast<int>(std::min<qint64>(qint64{origin.x()} + 59, INT_MAX)),
+                             static_cast<int>(std::min<qint64>(qint64{origin.y()} + 39, INT_MAX)));
+
+    QImage shadow = blank;
+    QVERIFY(paintShadow(shadow, caster, origin, ambientShadow(10)));
+    QCOMPARE(shadow, blank);
+    QImage rounded = blank;
+    QVERIFY(paintRoundedImageWithShadow(rounded, caster, origin, 10));
+    QCOMPARE(rounded, blank);
+    QImage snapped = blank;
+    QVERIFY(paintSnappedWindowShadow(snapped, caster, origin, 10));
+    QCOMPARE(snapped, blank);
+    QImage body = blank;
+    QVERIFY(paintWindowBodyShadow(body, QRect(origin, bottomRight), 4, 10));
+    QCOMPARE(body, blank);
+}
+
+void ShadowTest::refusesValuesThatOverflowAfterScaling_data() {
+    QTest::addColumn<double>("scale");
+    QTest::addColumn<double>("offset");
+    QTest::addColumn<double>("blur");
+
+    // Offset and blur are in points and are multiplied by the canvas's device pixel ratio before they are used as
+    // pixels. A product above one million pixels is refused, whatever the factors are, before any conversion to an int.
+    QTest::newRow("scaled offset beyond the limit") << 1.0e6 << 4.0 << 0.0;
+    QTest::newRow("scaled blur beyond the limit") << 1.0e6 << 0.0 << 3.0;
+    QTest::newRow("scaled offset at the largest int") << 2147483.647 << 1000.0 << 0.0;
+    QTest::newRow("scaled offset just beyond the largest int") << 2147483.648 << 1000.0 << 0.0;
+    QTest::newRow("scale near the limit of a double") << 1.0e300 << 4.0 << 0.0;
+    QTest::newRow("scaled blur near the limit of a double") << 1.0e300 << 0.0 << 4.0;
+    QTest::newRow("scaled values overflow to infinity") << 1.0e308 << 1.0e6 << 1.0e6;
+    QTest::newRow("scaled offset a hair above the limit") << 1.0 << 1000000.5 << 0.0;
+    QTest::newRow("scaled by less than one") << 0.5 << 2000001.0 << 0.0;
+}
+
+void ShadowTest::refusesValuesThatOverflowAfterScaling() {
+    QFETCH(double, scale);
+    QFETCH(double, offset);
+    QFETCH(double, blur);
+
+    QImage canvas = makeCanonicalImage(QSize(12, 12), scale);
+    QVERIFY(!canvas.isNull());
+    const QImage before = canvas.copy();
+    QVERIFY(
+        !paintShadow(canvas, filledImage(QSize(4, 4), kOpaqueWhite, scale), QPoint(4, 4), shadowOf(0.5, offset, blur)));
+    QCOMPARE(canvas, before);
+}
+
+void ShadowTest::acceptsAScaledOffsetExactlyAtTheLimit() {
+    // 1000 points on a canvas of scale 1000 are one million pixels: the shadow starts a million rows below the canvas,
+    // so it is painted (a layer of that height is made) and nothing of it is visible.
+    QImage canvas = makeCanonicalImage(QSize(8, 8), 1000.0);
+    QVERIFY(
+        paintShadow(canvas, filledImage(QSize(1, 1), kOpaqueWhite, 1000.0), QPoint(2, 2), shadowOf(0.5, 1000.0, 0.0)));
+    QCOMPARE(canvas, makeCanonicalImage(QSize(8, 8), 1000.0));
+}
+
+void ShadowTest::everyPainterRefusesAShadowThatOverflowsAfterScaling() {
+    const QImage caster = filledImage(QSize(8, 8), kTranslucentWhite);
+    QImage canvas = makeCanonicalImage(QSize(40, 40), 1.0e6);
+    const QImage before = canvas.copy();
+
+    QVERIFY(!paintRoundedImageWithShadow(canvas, caster, QPoint(10, 10), 10));
+    QCOMPARE(canvas, before);
+    QVERIFY(!paintSnappedWindowShadow(canvas, caster, QPoint(10, 10), 10));
+    QCOMPARE(canvas, before);
+    QVERIFY(!paintWindowBodyShadow(canvas, QRect(10, 10, 20, 20), 2, 10));
     QCOMPARE(canvas, before);
 }
 

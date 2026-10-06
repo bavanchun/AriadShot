@@ -9,6 +9,7 @@
 
 #include "render/CanonicalImage.h"
 #include "render/effects/Blur.h"
+#include "render/pixel/AlphaMask.h"
 #include "render/pixel/PixelSpan.h"
 
 #include <QPainter>
@@ -16,9 +17,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <cstddef>
-#include <cstdint>
-#include <span>
 
 namespace ariadshot::render {
 
@@ -45,27 +43,13 @@ constexpr double kContactBlurBase = 4.0;
 constexpr double kContactBlurPerRadius = 0.18;
 constexpr double kContactBlurLimit = 16.0;
 
-// The largest offset or blur, in points, that is painted; it keeps the pixel arithmetic below within an int.
+// The largest offset or blur, in pixels of the canvas it is painted on, that is painted: the blur refuses a sigma above
+// it, and it keeps every conversion to an int below within range.
 constexpr double kLargestShadowExtent = 1.0e6;
-
-std::size_t toIndex(int value) { return static_cast<std::size_t>(value); }
-
-// Premultiplied source-over: each channel is source + destination * (255 - source alpha) / 255, rounded to nearest.
-std::uint32_t over(std::uint32_t source, std::uint32_t destination) {
-    const std::uint32_t inverse = 255 - (source >> 24);
-    std::uint32_t result = 0;
-    for (int shift = 0; shift < 32; shift += 8) {
-        const std::uint32_t sourceChannel = (source >> shift) & 0xffU;
-        const std::uint32_t destinationChannel = (destination >> shift) & 0xffU;
-        result |= (sourceChannel + (destinationChannel * inverse + 127) / 255) << shift;
-    }
-    return result;
-}
 
 bool isUsable(const ShadowParameters& shadow) {
     return std::isfinite(shadow.alpha) && std::isfinite(shadow.offset) && std::isfinite(shadow.blur) &&
-           shadow.alpha >= 0.0 && shadow.alpha <= 1.0 && shadow.offset >= 0.0 &&
-           shadow.offset <= kLargestShadowExtent && shadow.blur >= 0.0 && shadow.blur <= kLargestShadowExtent;
+           shadow.alpha >= 0.0 && shadow.alpha <= 1.0 && shadow.offset >= 0.0 && shadow.blur >= 0.0;
 }
 
 // How far, in pixels, a blur of the given sigma spreads: the sum of the box radii.
@@ -77,42 +61,10 @@ int blurReach(double sigma) {
     return reach;
 }
 
-// The columns [first, last) of a layer of `layerWidth` pixels placed at `layerLeft` that fall on a canvas of
-// `canvasWidth` pixels.
-struct Columns {
-    int first;
-    int last;
-};
-
-Columns visibleColumns(int layerLeft, int layerWidth, int canvasWidth) {
-    return {.first = std::max(0, -layerLeft), .last = std::min(layerWidth, canvasWidth - layerLeft)};
-}
-
-// Paints `image` over the canvas with its top-left at `origin`, clipped to the canvas.
-bool drawImage(QImage& canvas, const QImage& image, QPoint origin) {
-    const PixelSpan target(canvas);
-    const ConstPixelSpan source(image);
-    if (target.isEmpty() || source.isEmpty()) {
-        return false;
-    }
-    const auto [first, last] = visibleColumns(origin.x(), source.width(), target.width());
-    for (int y = std::max(0, -origin.y()); y < source.height() && origin.y() + y < target.height(); ++y) {
-        const std::span<const std::uint32_t> sourceRow = source.row(y);
-        const std::span<std::uint32_t> targetRow = target.row(origin.y() + y);
-        for (int x = first; x < last; ++x) {
-            std::uint32_t& pixel = targetRow[toIndex(origin.x() + x)];
-            pixel = over(sourceRow[toIndex(x)], pixel);
-        }
-    }
-    return true;
-}
-
 // The shadow and then the caster, which is one pass of MacShot's transparency layers.
 bool paintPass(QImage& canvas, const QImage& caster, QPoint origin, const ShadowParameters& shadow) {
-    return paintShadow(canvas, caster, origin, shadow) && drawImage(canvas, caster, origin);
+    return paintShadow(canvas, caster, origin, shadow) && compositeOver(canvas, caster, origin);
 }
-
-bool isCanonical(const QImage& image) { return !ConstPixelSpan(image).isEmpty(); }
 
 } // namespace
 
@@ -137,75 +89,45 @@ ShadowParameters contactShadow(double radius) {
 }
 
 bool paintShadow(QImage& canvas, const QImage& caster, QPoint origin, const ShadowParameters& shadow) {
-    const ConstPixelSpan casterPixels(caster);
-    if (!isUsable(shadow) || casterPixels.isEmpty() || !isCanonical(canvas)) {
+    if (!isUsable(shadow) || !canViewPixels(caster) || !canViewPixels(canvas)) {
         return false;
     }
     if (shadow.alpha == 0.0) {
         return true;
     }
+    // Offset and blur are in points and the canvas works in pixels. The products are checked before anything is
+    // converted to an int: a large device pixel ratio turns an ordinary value into a huge one, and a ratio that is not
+    // a number or is infinite fails the same comparisons.
     const double scale = canvas.devicePixelRatio();
     const double sigma = shadow.blur * scale;
     const double offset = shadow.offset * scale;
-    const int wholeRows = static_cast<int>(std::floor(offset));
-    const double partialRow = offset - wholeRows;
+    if (!(sigma <= kLargestShadowExtent) || !(offset <= kLargestShadowExtent)) {
+        return false;
+    }
 
-    // The layer holds the caster with room for the blur on every side and for the move down.
+    // The mask holds the caster with room for the blur on every side and for the move down.
     const int margin = blurReach(sigma);
-    const QSize layerSize(casterPixels.width() + 2 * margin,
-                          casterPixels.height() + 2 * margin + static_cast<int>(std::ceil(offset)));
-    QImage layer = makeCanonicalImage(layerSize, 1.0);
-    const PixelSpan layerPixels(layer);
-    if (layerPixels.isEmpty()) {
+    const QImage mask = makeShadowMask(caster, shadow.alpha, margin, static_cast<int>(std::ceil(offset)));
+    if (mask.isNull()) {
         return false;
     }
-    for (int y = 0; y < casterPixels.height(); ++y) {
-        const std::span<std::uint32_t> layerRow = layerPixels.row(margin + y);
-        const std::span<const std::uint32_t> casterRow = casterPixels.row(y);
-        for (int x = 0; x < casterPixels.width(); ++x) {
-            const double alpha = (casterRow[toIndex(x)] >> 24) * shadow.alpha;
-            layerRow[toIndex(margin + x)] = static_cast<std::uint32_t>(std::lround(alpha)) << 24;
-        }
-    }
-    const QImage blurred = gaussianBlur(layer, sigma);
-    const ConstPixelSpan blurredPixels(blurred);
-    const PixelSpan canvasPixels(canvas);
-    if (blurredPixels.isEmpty()) {
-        return false;
-    }
-
-    // Each canvas row takes the blurred layer moved down: a mix of the two rows it lands between.
-    const QPoint layerOrigin = origin - QPoint(margin, margin);
-    const auto [first, last] = visibleColumns(layerOrigin.x(), layerSize.width(), canvasPixels.width());
-    for (int y = std::max(0, -layerOrigin.y()); y < layerSize.height() && layerOrigin.y() + y < canvasPixels.height();
-         ++y) {
-        const std::span<const std::uint32_t> upper = blurredPixels.row(y - wholeRows);
-        const std::span<const std::uint32_t> lower = blurredPixels.row(y - wholeRows - 1);
-        const std::span<std::uint32_t> canvasRow = canvasPixels.row(layerOrigin.y() + y);
-        for (int x = first; x < last; ++x) {
-            const double upperAlpha = upper.empty() ? 0.0 : (upper[toIndex(x)] >> 24);
-            const double lowerAlpha = lower.empty() ? 0.0 : (lower[toIndex(x)] >> 24);
-            const double alpha = (1.0 - partialRow) * upperAlpha + partialRow * lowerAlpha;
-            std::uint32_t& pixel = canvasRow[toIndex(layerOrigin.x() + x)];
-            pixel = over(static_cast<std::uint32_t>(std::lround(alpha)) << 24, pixel);
-        }
-    }
-    return true;
+    const QImage blurred = gaussianBlur(mask, sigma);
+    return !blurred.isNull() && compositeShadowMask(canvas, blurred, origin, margin, offset);
 }
 
 bool paintRoundedImageWithShadow(QImage& canvas, const QImage& roundedImage, QPoint origin, double radius) {
-    if (!isCanonical(canvas) || !isCanonical(roundedImage)) {
+    if (!canViewPixels(canvas) || !canViewPixels(roundedImage)) {
         return false;
     }
     if (radius > 0.0 && !(paintPass(canvas, roundedImage, origin, ambientShadow(radius)) &&
                           paintPass(canvas, roundedImage, origin, contactShadow(radius)))) {
         return false;
     }
-    return drawImage(canvas, roundedImage, origin);
+    return compositeOver(canvas, roundedImage, origin);
 }
 
 bool paintWindowBodyShadow(QImage& canvas, const QRect& body, double cornerRadius, double radius) {
-    if (!isCanonical(canvas) || body.isEmpty()) {
+    if (!canViewPixels(canvas) || body.isEmpty()) {
         return false;
     }
     if (!(radius > 0.0)) {
@@ -228,14 +150,14 @@ bool paintWindowBodyShadow(QImage& canvas, const QRect& body, double cornerRadiu
 }
 
 bool paintSnappedWindowShadow(QImage& canvas, const QImage& windowImage, QPoint origin, double radius) {
-    if (!isCanonical(canvas) || !isCanonical(windowImage)) {
+    if (!canViewPixels(canvas) || !canViewPixels(windowImage)) {
         return false;
     }
     if (radius > 0.0 && !(paintPass(canvas, windowImage, origin, contactShadow(radius)) &&
                           paintPass(canvas, windowImage, origin, ambientShadow(radius)))) {
         return false;
     }
-    return drawImage(canvas, windowImage, origin);
+    return compositeOver(canvas, windowImage, origin);
 }
 
 } // namespace ariadshot::render

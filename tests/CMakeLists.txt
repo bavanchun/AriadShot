@@ -111,6 +111,16 @@ ariadshot_add_test(NAME render.resample
     LIBS AriadShot::render
     LABELS unit tsan-safe)
 
+ariadshot_add_test(NAME render.alpha-mask
+    SOURCES unit/render/tst_AlphaMask.cpp
+    LIBS AriadShot::render
+    LABELS unit tsan-safe)
+
+ariadshot_add_test(NAME render.pixel-boundary
+    SOURCES unit/render/tst_PixelBoundary.cpp
+    LABELS unit tsan-safe)
+target_compile_definitions(tst_render_pixel_boundary PRIVATE ARIADSHOT_TEST_SOURCE_DIR="${PROJECT_SOURCE_DIR}/src")
+
 ariadshot_add_test(NAME render.smoke-golden
     SOURCES golden/tst_RenderSmoke.cpp
     LIBS AriadShot::render ariadshot_test_support

@@ -15,6 +15,8 @@ target_sources(ariadshot_render PRIVATE
     pixel/BoxBlur.cpp
     pixel/Resample.h
     pixel/Resample.cpp
+    pixel/AlphaMask.h
+    pixel/AlphaMask.cpp
     effects/Blur.h
     effects/Blur.cpp
     effects/Pixelate.h
