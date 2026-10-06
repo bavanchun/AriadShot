@@ -239,16 +239,31 @@ ariadshot_add_test(NAME ui.view-root
     LIBS AriadShot::ui Qt6::GuiPrivate
     LABELS unit)
 
-ariadshot_add_test(NAME media.studio-compositor
-    SOURCES unit/media/tst_StudioCompositor.cpp
-    LIBS AriadShot::media ariadshot_test_support Qt6::GuiPrivate Qt6::Widgets
-    LABELS unit)
-
-if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    ariadshot_add_test(NAME media.studio-compositor-wayland
+if(ARIADSHOT_MEDIA)
+    ariadshot_add_test(NAME media.studio-compositor
         SOURCES unit/media/tst_StudioCompositor.cpp
-        LIBS AriadShot::media ariadshot_test_support Qt6::GuiPrivate Qt6::Widgets
-        LABELS wayland gpu)
+        LIBS AriadShot::media ariadshot_test_support Qt6::GuiPrivate
+        LABELS unit)
+
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+        add_executable(tst_media_studio_compositor_real unit/media/tst_StudioCompositorReal.cpp)
+        target_link_libraries(tst_media_studio_compositor_real PRIVATE
+            Qt6::Test
+            AriadShot::options
+            AriadShot::media
+            ariadshot_test_support
+            Qt6::GuiPrivate
+            Qt6::Widgets
+        )
+
+        add_test(NAME media.studio-compositor-opengl COMMAND tst_media_studio_compositor_real --api opengl)
+        set_tests_properties(media.studio-compositor-opengl PROPERTIES LABELS wayland)
+        ariadshot_wayland_test_environment(media.studio-compositor-opengl)
+
+        add_test(NAME media.studio-compositor-vulkan COMMAND tst_media_studio_compositor_real --api vulkan)
+        set_tests_properties(media.studio-compositor-vulkan PROPERTIES LABELS gpu)
+        ariadshot_wayland_test_environment(media.studio-compositor-vulkan)
+    endif()
 endif()
 
 # --- Tests of the build system and the repository scripts ------------------------------------------------------------
