@@ -30,11 +30,13 @@ namespace {
 using Widths = std::array<int, 3>;
 
 constexpr quint32 pixelOf(quint32 alpha, quint32 red, quint32 green, quint32 blue) {
-    return (alpha << 24) | (red << 16) | (green << 8) | blue;
+    return (alpha << 24U) | (red << 16U) | (green << 8U) | blue;
 }
 
 // Channel 0 is alpha, then red, green and blue.
-int channelOf(quint32 pixel, int channel) { return static_cast<int>((pixel >> (24 - 8 * channel)) & 0xffU); }
+int channelOf(quint32 pixel, int channel) {
+    return static_cast<int>((pixel >> static_cast<unsigned int>(24 - 8 * channel)) & 0xffU);
+}
 
 std::size_t toIndex(int value) { return static_cast<std::size_t>(value); }
 
@@ -54,7 +56,7 @@ QImage randomImage(QSize size) {
     quint32 state = 12345;
     const auto next = [&state](quint32 limit) {
         state = state * 1664525U + 1013904223U;
-        return (state >> 16) % (limit + 1);
+        return (state >> 16U) % (limit + 1U);
     };
     for (int y = 0; y < view.height(); ++y) {
         for (quint32& pixel : view.row(y)) {

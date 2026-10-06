@@ -23,12 +23,12 @@ constexpr double kLargestRowOffset = static_cast<double>(std::numeric_limits<int
 
 // Premultiplied source-over: each channel is source + destination * (255 - source alpha) / 255, rounded to nearest.
 std::uint32_t over(std::uint32_t source, std::uint32_t destination) {
-    const std::uint32_t inverse = 255 - (source >> 24);
-    std::uint32_t result = 0;
-    for (int shift = 0; shift < 32; shift += 8) {
+    const std::uint32_t inverse = 255U - (source >> 24U);
+    std::uint32_t result = 0U;
+    for (unsigned int shift = 0U; shift < 32U; shift += 8U) {
         const std::uint32_t sourceChannel = (source >> shift) & 0xffU;
         const std::uint32_t destinationChannel = (destination >> shift) & 0xffU;
-        result |= (sourceChannel + (destinationChannel * inverse + 127) / 255) << shift;
+        result |= (sourceChannel + (destinationChannel * inverse + 127U) / 255U) << shift;
     }
     return result;
 }
@@ -93,7 +93,7 @@ QImage makeShadowMask(const QImage& caster, double opacity, int margin, int extr
         const std::span<std::uint32_t> to =
             target.row(std::int64_t{margin} + y).subspan(static_cast<std::size_t>(margin), from.size());
         for (std::size_t x = 0; x < from.size(); ++x) {
-            to[x] = static_cast<std::uint32_t>(std::lround((from[x] >> 24) * opacity)) << 24;
+            to[x] = static_cast<std::uint32_t>(std::lround((from[x] >> 24U) * opacity)) << 24U;
         }
     }
     return mask;
@@ -123,10 +123,10 @@ bool compositeShadowMask(QImage& canvas, const QImage& mask, QPoint casterOrigin
             target.row(layerY + y).subspan(static_cast<std::size_t>(layerX + columns.first), columns.count());
         for (std::size_t i = 0; i < to.size(); ++i) {
             const auto x = static_cast<std::size_t>(columns.first) + i;
-            const double upperAlpha = upper.empty() ? 0.0 : (upper[x] >> 24);
-            const double lowerAlpha = lower.empty() ? 0.0 : (lower[x] >> 24);
+            const double upperAlpha = upper.empty() ? 0.0 : (upper[x] >> 24U);
+            const double lowerAlpha = lower.empty() ? 0.0 : (lower[x] >> 24U);
             const double alpha = (1.0 - partialRow) * upperAlpha + partialRow * lowerAlpha;
-            to[i] = over(static_cast<std::uint32_t>(std::lround(alpha)) << 24, to[i]);
+            to[i] = over(static_cast<std::uint32_t>(std::lround(alpha)) << 24U, to[i]);
         }
     }
     return true;

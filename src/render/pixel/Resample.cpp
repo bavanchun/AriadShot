@@ -55,9 +55,9 @@ QImage areaAverage(const QImage& source, QSize size) {
             std::ranges::fill(mean, 0.0F);
             forEachCoveredSource(static_cast<int>(x), input.width(), output.width(), [&](int sourceX, double weight) {
                 const std::uint32_t pixel = row[toIndex(sourceX)];
-                mean[0] += static_cast<float>(weight * (pixel >> 24));
-                mean[1] += static_cast<float>(weight * ((pixel >> 16) & 0xffU));
-                mean[2] += static_cast<float>(weight * ((pixel >> 8) & 0xffU));
+                mean[0] += static_cast<float>(weight * (pixel >> 24U));
+                mean[1] += static_cast<float>(weight * ((pixel >> 16U) & 0xffU));
+                mean[2] += static_cast<float>(weight * ((pixel >> 8U) & 0xffU));
                 mean[3] += static_cast<float>(weight * (pixel & 0xffU));
             });
         }

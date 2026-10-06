@@ -51,16 +51,16 @@ QImage filledImage(QSize size, quint32 pixel, qreal devicePixelRatio = 1.0) {
 
 quint32 pixelAt(const QImage& image, int x, int y) { return ConstPixelSpan(image).row(y)[toIndex(x)]; }
 
-int alphaAt(const QImage& image, int x, int y) { return static_cast<int>(pixelAt(image, x, y) >> 24); }
+int alphaAt(const QImage& image, int x, int y) { return static_cast<int>(pixelAt(image, x, y) >> 24U); }
 
 // Premultiplied source-over: each channel is source + destination * (255 - source alpha) / 255, rounded to nearest.
 quint32 over(quint32 source, quint32 destination) {
-    const quint32 inverse = 255 - (source >> 24);
-    quint32 result = 0;
-    for (int shift = 0; shift < 32; shift += 8) {
+    const quint32 inverse = 255U - (source >> 24U);
+    quint32 result = 0U;
+    for (unsigned int shift = 0U; shift < 32U; shift += 8U) {
         const quint32 s = (source >> shift) & 0xffU;
         const quint32 d = (destination >> shift) & 0xffU;
-        result |= (s + (d * inverse + 127) / 255) << shift;
+        result |= (s + (d * inverse + 127U) / 255U) << shift;
     }
     return result;
 }

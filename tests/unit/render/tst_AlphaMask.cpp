@@ -25,7 +25,7 @@ namespace {
 constexpr quint32 kOpaqueWhite = 0xffffffffU;
 
 constexpr quint32 pixelOf(quint32 alpha, quint32 red, quint32 green, quint32 blue) {
-    return (alpha << 24) | (red << 16) | (green << 8) | blue;
+    return (alpha << 24U) | (red << 16U) | (green << 8U) | blue;
 }
 
 QImage filledImage(QSize size, quint32 pixel) {
@@ -55,7 +55,7 @@ QString describe(const QImage& image) {
     QString text;
     for (int y = 0; y < image.height(); ++y) {
         for (int x = 0; x < image.width(); ++x) {
-            text += QStringLiteral("%1 ").arg(pixelAt(image, x, y) >> 24, 3);
+            text += QStringLiteral("%1 ").arg(pixelAt(image, x, y) >> 24U, 3);
         }
         text += QLatin1Char('\n');
     }
@@ -306,7 +306,7 @@ void AlphaMaskTest::aMaskMovesDownByWholeAndFractionalRows() {
             expected = secondAlpha;
         }
         QVERIFY2(
-            pixelAt(canvas, 4, y) == static_cast<quint32>(expected) << 24,
+            pixelAt(canvas, 4, y) == static_cast<quint32>(expected) << 24U,
             qPrintable(
                 QStringLiteral("row %1 is %2\n%3").arg(y).arg(pixelAt(canvas, 4, y), 8, 16).arg(describe(canvas))));
         QVERIFY2(pixelAt(canvas, 3, y) == 0U && pixelAt(canvas, 5, y) == 0U,

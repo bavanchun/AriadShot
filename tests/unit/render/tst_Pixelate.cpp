@@ -24,10 +24,10 @@ using ariadshot::render::PixelSpan;
 namespace {
 
 constexpr quint32 pixelOf(quint32 alpha, quint32 red, quint32 green, quint32 blue) {
-    return (alpha << 24) | (red << 16) | (green << 8) | blue;
+    return (alpha << 24U) | (red << 16U) | (green << 8U) | blue;
 }
 
-constexpr quint32 grayOf(quint32 level) { return pixelOf(255, level, level, level); }
+constexpr quint32 grayOf(quint32 level) { return pixelOf(255U, level, level, level); }
 
 std::size_t toIndex(int value) { return static_cast<std::size_t>(value); }
 

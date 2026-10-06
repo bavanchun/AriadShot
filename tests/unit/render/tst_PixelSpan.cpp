@@ -91,8 +91,8 @@ void PixelSpanTest::rejectsRowsOutsideTheImage_data() {
     QTest::newRow("smallest int") << qint64{INT_MIN};
     QTest::newRow("largest int") << qint64{INT_MAX};
     // These two wrap to row 1 and row 0 when truncated to 32 bits, which is a valid row.
-    QTest::newRow("a 64-bit row that wraps to row 1") << (qint64{1} << 32) + 1;
-    QTest::newRow("a 64-bit row that wraps to row 0") << (qint64{1} << 32);
+    QTest::newRow("a 64-bit row that wraps to row 1") << static_cast<qint64>(quint64{1} << 32U) + 1;
+    QTest::newRow("a 64-bit row that wraps to row 0") << static_cast<qint64>(quint64{1} << 32U);
     QTest::newRow("smallest 64-bit row") << kSmallestCoordinate;
     QTest::newRow("largest 64-bit row") << kLargestCoordinate;
 }
@@ -153,7 +153,7 @@ void PixelSpanTest::rejectsColumnsOutsideTheRow_data() {
         }
     }
     // A column that wraps to a valid column when truncated to 32 bits.
-    QTest::newRow("a 64-bit column that wraps to column 1") << (qint64{1} << 32) + 1 << qint64{0};
+    QTest::newRow("a 64-bit column that wraps to column 1") << static_cast<qint64>(quint64{1} << 32U) + 1 << qint64{0};
 }
 
 void PixelSpanTest::rejectsColumnsOutsideTheRow() {
@@ -176,7 +176,7 @@ void PixelSpanTest::rejectsRowsOutsideTheImageByCoordinates_data() {
     QTest::newRow("far below") << qint64{2} << qint64{1000};
     QTest::newRow("smallest int") << qint64{2} << qint64{INT_MIN};
     QTest::newRow("largest int") << qint64{2} << qint64{INT_MAX};
-    QTest::newRow("a 64-bit row that wraps to row 1") << qint64{2} << (qint64{1} << 32) + 1;
+    QTest::newRow("a 64-bit row that wraps to row 1") << qint64{2} << static_cast<qint64>(quint64{1} << 32U) + 1;
     QTest::newRow("both outside") << qint64{-1} << qint64{3};
 }
 

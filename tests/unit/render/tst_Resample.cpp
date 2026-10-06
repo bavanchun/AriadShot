@@ -23,10 +23,10 @@ namespace {
 using Pixels = std::vector<quint32>;
 
 constexpr quint32 pixelOf(quint32 alpha, quint32 red, quint32 green, quint32 blue) {
-    return (alpha << 24) | (red << 16) | (green << 8) | blue;
+    return (alpha << 24U) | (red << 16U) | (green << 8U) | blue;
 }
 
-constexpr quint32 grayOf(quint32 level) { return pixelOf(255, level, level, level); }
+constexpr quint32 grayOf(quint32 level) { return pixelOf(255U, level, level, level); }
 
 // An image of the given size whose pixels are `pixels`, row by row.
 QImage imageOf(QSize size, const Pixels& pixels) {
@@ -58,7 +58,7 @@ QImage randomImage(QSize size) {
     quint32 state = 777;
     const auto next = [&state](quint32 limit) {
         state = state * 1664525U + 1013904223U;
-        return (state >> 16) % (limit + 1);
+        return (state >> 16U) % (limit + 1U);
     };
     for (int y = 0; y < view.height(); ++y) {
         for (quint32& pixel : view.row(y)) {

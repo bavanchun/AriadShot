@@ -27,9 +27,9 @@ using FloatBuffer = std::unique_ptr<float[]>;
 }
 
 inline void unpackPixel(std::uint32_t pixel, std::span<float, kPixelChannels> channels) {
-    channels[0] = static_cast<float>(pixel >> 24);
-    channels[1] = static_cast<float>((pixel >> 16) & 0xffU);
-    channels[2] = static_cast<float>((pixel >> 8) & 0xffU);
+    channels[0] = static_cast<float>(pixel >> 24U);
+    channels[1] = static_cast<float>((pixel >> 16U) & 0xffU);
+    channels[2] = static_cast<float>((pixel >> 8U) & 0xffU);
     channels[3] = static_cast<float>(pixel & 0xffU);
 }
 
@@ -42,7 +42,7 @@ inline void unpackPixel(std::uint32_t pixel, std::span<float, kPixelChannels> ch
     }
     // Rounding both is monotonic, so a colour never exceeds alpha; the guard only absorbs float error.
     const std::uint32_t alpha = level[0];
-    return (alpha << 24) | (std::min(level[1], alpha) << 16) | (std::min(level[2], alpha) << 8) |
+    return (alpha << 24U) | (std::min(level[1], alpha) << 16U) | (std::min(level[2], alpha) << 8U) |
            std::min(level[3], alpha);
 }
 
