@@ -199,6 +199,16 @@ ariadshot_add_test(NAME app.signal-bridge
     LIBS AriadShot::app
     LABELS unit)
 
+set(QT_NO_PRIVATE_MODULE_WARNING ON)
+if(Qt6_VERSION VERSION_GREATER_EQUAL 6.9)
+    find_package(Qt6 REQUIRED COMPONENTS GuiPrivate)
+endif()
+
+ariadshot_add_test(NAME ui.view-root
+    SOURCES unit/ui/tst_ViewRoot.cpp
+    LIBS AriadShot::ui Qt6::GuiPrivate
+    LABELS unit)
+
 # --- Tests of the build system and the repository scripts ------------------------------------------------------------
 #
 # Negative cases pass only when the checker prints its own message for the rule under test (PASS_REGULAR_EXPRESSION),

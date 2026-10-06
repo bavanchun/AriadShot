@@ -1,0 +1,34 @@
+<!--
+SPDX-FileCopyrightText: 2026 The AriadShot Authors
+SPDX-License-Identifier: GPL-3.0-only
+-->
+
+# src/ui — local rules
+
+`ui` holds the host-agnostic view objects: canvases, chrome, tool handlers and the canvas text control
+(`docs/spec/02-modules-and-interfaces.md` §7, `docs/spec/04-capture-and-overlay.md` §5).
+
+- **QtGui only.** No QtWidgets, QtQuick, Qt private API or platform headers; include only `core/`, `render/`,
+  `platform/` and `ui/` headers. A view object is shown through a surface host or an ordinary window that embeds a
+  `ViewRoot`, never through a widget.
+- **Hosts see `platform::SurfaceContent` only.** `ViewRoot` implements it; no host type appears in `ui`, and no code
+  here asks which desktop it runs on.
+- **One layer per view object.** `ViewObject::paint` draws into the chrome layer. Canonical layers come from `render/`
+  and reach the root through `setCanonicalLayers`, so no view object paints into both and surfaces never re-render
+  annotations.
+- **Accessible by construction.** Every chrome view object gives `accessibleName()` (through `tr()`) and
+  `accessibleRole()`; a view with more to expose, such as text or a value, overrides `accessible()` and reports
+  `accessibleParent()` and `screenRect()`. Qt wants screen coordinates, so a view never reports surface points.
+- **Containers declare their children.** A view whose `hitTest()` hands out another view adds it with `addChild()`: the
+  child gets its holder as accessible parent, its damage and screen position reach the root, and the holder's
+  interface lists it. The root announces a view that enters or leaves the tree to assistive technology.
+- **Input state follows the root, and the root never calls a destroyed view.** A press makes its view the pointer
+  owner until every button is released; removing or destroying the owner, or its holder, cancels the gesture and the
+  rest of it goes to no view. A view that answers the input method's queries is the input method owner
+  (`inputMethodQuery()`). A holder may destroy a descendant at any time, so the root checks before it calls one.
+- **Paint within `paintBounds()`.** The root clips each view to it, and adding, moving and removing the view damages
+  it. A view that draws a shadow or a border beyond its geometry overrides it.
+- **One coordinate space.** Geometry, event positions, damage and painting are in the surface's points, top-left
+  origin, y down. Damage is rounded outwards to whole points.
+- **Tests** run offscreen in `tests/unit/ui/` and assert behaviour. Appearance values are ported from MacShot with
+  their `macshot/<path>:<line>@b4d4f3a` source, never invented here.
