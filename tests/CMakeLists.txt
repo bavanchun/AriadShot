@@ -159,6 +159,11 @@ ariadshot_add_test(NAME app.signal-bridge
     LIBS AriadShot::app
     LABELS unit)
 
+ariadshot_add_test(NAME ui.view-root
+    SOURCES unit/ui/tst_ViewRoot.cpp
+    LIBS AriadShot::ui
+    LABELS unit)
+
 # --- Tests of the build system and the repository scripts ------------------------------------------------------------
 #
 # Negative cases pass only when the checker prints its own message for the rule under test (PASS_REGULAR_EXPRESSION),

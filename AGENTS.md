@@ -21,6 +21,7 @@ AriadShot is a faithful Linux and macOS remake of MacShot (upstream https://gith
 - `src/core/AGENTS.md`
 - `src/render/AGENTS.md`
 - `src/platform/AGENTS.md`
+- `src/ui/AGENTS.md`
 - `tests/AGENTS.md`
 
 Keep this list complete: `scripts/check-repo.sh` fails when a nested `AGENTS.md` is missing from it. Codex and agy load
