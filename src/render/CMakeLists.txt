@@ -9,7 +9,11 @@ target_sources(ariadshot_render PRIVATE
     text/FontSet.h
     text/FontSet.cpp
     pixel/PixelSpan.h
-    pixel/PixelSpan.cpp)
+    pixel/PixelSpan.cpp
+    effects/Blur.h
+    effects/Blur.cpp
+    effects/Pixelate.h
+    effects/Pixelate.cpp)
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     set_target_properties(ariadshot_render PROPERTIES AUTORCC ON)
     target_sources(ariadshot_render PRIVATE resources/fonts/fonts.qrc)

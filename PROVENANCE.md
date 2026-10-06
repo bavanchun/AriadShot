@@ -35,3 +35,7 @@ AriadShot does not reuse MacShot's name, logo, DMG artwork, capture sound, embed
 | :--- | :--- | :--- |
 | `src/app/TrayController.cpp` | `macshot/AppDelegate.swift:914` | the status menu's Quit item title, with AriadShot's name in place of MacShot's |
 | `tests/unit/app/tst_TrayController.cpp` | `macshot/AppDelegate.swift:914` | the same title, as the expected value |
+| `src/render/effects/Blur.cpp` | `macshot/Model/Annotation.swift:2253-2272` | the censor blur's sigma rule: at least 10, and 3 % of the region's shorter side |
+| `tests/unit/render/tst_Blur.cpp` | `macshot/Model/Annotation.swift:2256` | the same sigma rule, as expected values |
+| `src/render/effects/Pixelate.cpp` | `macshot/Model/Annotation.swift:1953-2020` | the three step sizes: reduce by 8, then by 2, enlarge to twice the region's size in points |
+| `tests/unit/render/tst_Pixelate.cpp` | `macshot/Model/Annotation.swift:1990-2015` | the same step sizes, as expected values |

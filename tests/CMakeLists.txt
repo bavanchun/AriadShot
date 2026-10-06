@@ -86,6 +86,16 @@ ariadshot_add_test(NAME render.pixel-span
     LIBS AriadShot::render
     LABELS unit tsan-safe)
 
+ariadshot_add_test(NAME render.blur
+    SOURCES unit/render/tst_Blur.cpp
+    LIBS AriadShot::render
+    LABELS unit tsan-safe)
+
+ariadshot_add_test(NAME render.pixelate
+    SOURCES unit/render/tst_Pixelate.cpp
+    LIBS AriadShot::render
+    LABELS unit tsan-safe)
+
 ariadshot_add_test(NAME render.smoke-golden
     SOURCES golden/tst_RenderSmoke.cpp
     LIBS AriadShot::render ariadshot_test_support
