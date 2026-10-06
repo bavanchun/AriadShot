@@ -9,6 +9,7 @@
 #include <QtCore/QCommandLineParser>
 #include <QtCore/QDir>
 #include <QtCore/QFile>
+#include <QtCore/QFileInfo>
 #include <QtCore/QJsonDocument>
 #include <QtCore/QJsonObject>
 #include <QtCore/QtGlobal>
@@ -16,6 +17,7 @@
 #include <QtGui/QImage>
 #include <QtGui/QOffscreenSurface>
 #include <QtGui/QPainter>
+#include <QtGui/qvulkaninstance.h>
 #include <QtGui/rhi/qrhi.h>
 #include <QtGui/rhi/qrhi_platform.h>
 #include <QtWidgets/QApplication>
@@ -94,9 +96,75 @@ FrameScene createBenchmarkScene(const QSize& size) {
     return FrameSceneBuilder::build(source, 0, overlay);
 }
 
+QImage renderOffscreenToImage(QRhi* rhi, StudioCompositor* compositor, const FrameScene& scene) {
+    if (!rhi || !compositor || !scene.isValid()) {
+        return {};
+    }
+    const QSize size = scene.canvasSize();
+    std::unique_ptr<QRhiTexture> finalTex(
+        rhi->newTexture(QRhiTexture::RGBA8, size, 1, QRhiTexture::RenderTarget | QRhiTexture::UsedAsTransferSource));
+    if (!finalTex->create()) {
+        return {};
+    }
+
+    QRhiColorAttachment att(finalTex.get());
+    std::unique_ptr<QRhiTextureRenderTarget> rt(rhi->newTextureRenderTarget({att}));
+    std::unique_ptr<QRhiRenderPassDescriptor> rpDesc(rt->newCompatibleRenderPassDescriptor());
+    rt->setRenderPassDescriptor(rpDesc.get());
+    if (!rt->create()) {
+        return {};
+    }
+
+    QRhiCommandBuffer* cb = nullptr;
+    if (rhi->beginOffscreenFrame(&cb) != QRhi::FrameOpSuccess) {
+        return {};
+    }
+
+    compositor->render(scene, rt.get(), cb);
+
+    QRhiReadbackResult rbResult;
+    QRhiResourceUpdateBatch* u = rhi->nextResourceUpdateBatch();
+    u->readBackTexture(QRhiReadbackDescription(finalTex.get()), &rbResult);
+    cb->resourceUpdate(u);
+
+    if (rhi->endOffscreenFrame() != QRhi::FrameOpSuccess) {
+        return {};
+    }
+    rhi->finish();
+
+    if (rbResult.data.isEmpty()) {
+        return {};
+    }
+
+    const auto* p = reinterpret_cast<const uchar*>(rbResult.data.constData());
+    QImage image(p, size.width(), size.height(), size.width() * 4, QImage::Format_RGBA8888);
+    if (rhi->isYUpInFramebuffer()) {
+        image = image.flipped(Qt::Vertical);
+    }
+    return image.copy();
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
+    for (int i = 1; i < argc; ++i) {
+        const QString arg = QString::fromUtf8(argv[i]);
+        if (arg == QStringLiteral("--wayland-display") && i + 1 < argc) {
+            qputenv("WAYLAND_DISPLAY", argv[++i]);
+            qputenv("QT_QPA_PLATFORM", "wayland");
+        } else if (arg.startsWith(QStringLiteral("--wayland-display="))) {
+            const QString val = arg.mid(18);
+            qputenv("WAYLAND_DISPLAY", val.toUtf8());
+            qputenv("QT_QPA_PLATFORM", "wayland");
+        }
+    }
+
+    if (qEnvironmentVariableIsEmpty("WAYLAND_DISPLAY") &&
+        (qEnvironmentVariable("QT_QPA_PLATFORM") == QStringLiteral("offscreen") ||
+         qEnvironmentVariableIsEmpty("QT_QPA_PLATFORM"))) {
+        qputenv("QT_QPA_PLATFORM", "eglfs");
+    }
+
     QApplication app(argc, argv);
 
     QCommandLineParser parser;
@@ -129,32 +197,63 @@ int main(int argc, char** argv) {
         QStringLiteral("%1x%2").arg(exportResolution.width()).arg(exportResolution.height());
 
     QRhiWidget::Api rhiApi = QRhiWidget::Api::Vulkan;
+    std::unique_ptr<QOffscreenSurface> glFallbackSurface;
+    std::unique_ptr<QRhi> offscreenRhi;
+    QVulkanInstance vkInst;
+
     if (apiStr == QStringLiteral("opengl")) {
         rhiApi = QRhiWidget::Api::OpenGL;
+        QRhiGles2InitParams glParams;
+        glFallbackSurface.reset(QRhiGles2InitParams::newFallbackSurface());
+        glParams.fallbackSurface = glFallbackSurface.get();
+        offscreenRhi.reset(QRhi::create(QRhi::OpenGLES2, &glParams));
+    } else {
+        rhiApi = QRhiWidget::Api::Vulkan;
+        if (vkInst.create()) {
+            QRhiVulkanInitParams vkParams;
+            vkParams.inst = &vkInst;
+            offscreenRhi.reset(QRhi::create(QRhi::Vulkan, &vkParams));
+        }
     }
 
+    // 1. Offscreen export path render
+    QImage preEncodeImage;
+    if (offscreenRhi) {
+        std::unique_ptr<StudioCompositor> compositor = StudioCompositor::create(offscreenRhi.get());
+        if (compositor) {
+            preEncodeImage = renderOffscreenToImage(offscreenRhi.get(), compositor.get(), scene);
+        }
+    }
+
+    // 2. Offscreen preview widget render
     StudioPreviewWidget widget(scene);
     widget.setApi(rhiApi);
     widget.setFixedColorBufferSize(exportResolution);
     widget.setColorBufferFormat(QRhiWidget::TextureFormat::RGBA8);
     widget.resize(exportResolution);
 
-    // Render offscreen preview grab
-    const QImage previewGrab = widget.grabFramebuffer();
+    QImage previewGrab = widget.grabFramebuffer();
+    if (!previewGrab.isNull() && previewGrab.format() != QImage::Format_RGBA8888) {
+        previewGrab = previewGrab.convertToFormat(QImage::Format_RGBA8888);
+    }
 
-    if (previewGrab.isNull() || !widget.initializationSucceeded()) {
+    if (previewGrab.isNull() || preEncodeImage.isNull()) {
         rootObj[QStringLiteral("status")] = QStringLiteral("not_taken");
-        rootObj[QStringLiteral("reason")] =
-            QStringLiteral(
-                "QRhiWidget cannot render offscreen on API '%1' under current platform plugin without compositor")
-                .arg(apiStr);
-        std::cout << "[preview-harness] Measurement not taken: QRhiWidget cannot render offscreen on "
-                  << apiStr.toStdString() << ".\n";
+        QString failureReason;
+        if (!offscreenRhi) {
+            failureReason = QStringLiteral("Offscreen QRhi initialization failed on API '%1'").arg(apiStr);
+        } else if (preEncodeImage.isNull()) {
+            failureReason = QStringLiteral("Pre-encode offscreen render failed on API '%1'").arg(apiStr);
+        } else {
+            failureReason =
+                QStringLiteral("QRhiWidget grabFramebuffer failed on API '%1' under current platform plugin")
+                    .arg(apiStr);
+        }
+        rootObj[QStringLiteral("reason")] = failureReason;
+        std::cout << "[preview-harness] Measurement not taken: " << failureReason.toStdString() << ".\n";
     } else {
-        // Pre-encode offscreen render on export path
-        // In G5: preview equals pre-encode comparison
-        ComparisonResult compResult =
-            ImageCompare::comparePerceptual(previewGrab, previewGrab, ImageCompare::kPresentation);
+        const ComparisonResult compResult =
+            ImageCompare::comparePerceptual(previewGrab, preEncodeImage, ImageCompare::kPresentation);
 
         rootObj[QStringLiteral("status")] = compResult.passed ? QStringLiteral("passed") : QStringLiteral("failed");
         rootObj[QStringLiteral("passing_fraction")] = compResult.passingFraction;
@@ -164,7 +263,8 @@ int main(int argc, char** argv) {
 
         std::cout << "[preview-harness] API: " << apiStr.toStdString()
                   << " result: " << (compResult.passed ? "PASSED" : "FAILED")
-                  << " passingFraction: " << compResult.passingFraction << "\n";
+                  << " passingFraction: " << compResult.passingFraction << " maxDeltaE: " << compResult.maxDeltaE
+                  << " p99DeltaE: " << compResult.p99DeltaE << "\n";
     }
 
     if (!outFile.isEmpty()) {

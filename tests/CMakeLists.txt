@@ -211,7 +211,7 @@ ariadshot_add_test(NAME ui.view-root
 
 ariadshot_add_test(NAME media.studio-compositor
     SOURCES unit/media/tst_StudioCompositor.cpp
-    LIBS AriadShot::media ariadshot_test_support Qt6::GuiPrivate
+    LIBS AriadShot::media ariadshot_test_support Qt6::GuiPrivate Qt6::Widgets
     LABELS unit)
 
 # --- Tests of the build system and the repository scripts ------------------------------------------------------------

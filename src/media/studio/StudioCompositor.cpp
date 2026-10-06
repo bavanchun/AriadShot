@@ -91,11 +91,12 @@ class RhiStudioCompositor final : public StudioCompositor {
             return;
         }
 
-        if (!ensureResources(scene.canvasSize(), target)) {
+        QRhiResourceUpdateBatch* u = m_rhi->nextResourceUpdateBatch();
+        if (!ensureResources(scene.canvasSize(), target, u)) {
+            u->release();
             return;
         }
 
-        QRhiResourceUpdateBatch* u = m_rhi->nextResourceUpdateBatch();
         QImage src = scene.sourceFrame();
         if (src.format() != QImage::Format_RGBA8888 && src.format() != QImage::Format_RGBA8888_Premultiplied) {
             src = src.convertToFormat(QImage::Format_RGBA8888);
@@ -144,7 +145,7 @@ class RhiStudioCompositor final : public StudioCompositor {
     }
 
   private:
-    bool ensureResources(const QSize& size, QRhiRenderTarget* target) {
+    bool ensureResources(const QSize& size, QRhiRenderTarget* target, QRhiResourceUpdateBatch* u) {
         if (!m_rhi) {
             return false;
         }
@@ -179,10 +180,8 @@ class RhiStudioCompositor final : public StudioCompositor {
                 return false;
             }
 
-            QRhiResourceUpdateBatch* u = m_rhi->nextResourceUpdateBatch();
             u->uploadStaticBuffer(m_vertexBuffer, 0, 6 * sizeof(Vertex), quadSource.data());
             u->uploadStaticBuffer(m_vertexBuffer, 6 * sizeof(Vertex), 6 * sizeof(Vertex), quadWorking.data());
-            m_rhi->nextResourceUpdateBatch(); // merge on frame
         }
 
         if (!m_sampler) {
