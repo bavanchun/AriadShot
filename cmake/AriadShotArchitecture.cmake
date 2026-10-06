@@ -21,8 +21,10 @@
 #      so allowed paths such as render -> core -> Qt6::Core pass.
 #   3. Normalisation: aliases resolve to their real target; $<LINK_ONLY:x> and $<BUILD_INTERFACE:x> are unwrapped;
 #      Qt's plugin-import expression counts as an edge to the Qt module that the plugin extends (see
-#      _ariadshot_arch_qt_plugin_module); any other generator expression, plain library path or linker flag fails closed
-#      until a rule is added here.
+#      _ariadshot_arch_qt_plugin_module); an internal resource object library that Qt generates for a target (through
+#      qt_add_resources or qt_add_shaders) and its $<TARGET_OBJECTS:...> propagation expressions are treated as part
+#      of that target and add no link edge; any other generator expression, plain library path or linker flag fails
+#      closed until a rule is added here.
 
 include_guard(GLOBAL)
 
@@ -98,6 +100,22 @@ function(_ariadshot_arch_qt_plugin_module plugin out)
     set(${out} "${module}" PARENT_SCOPE)
 endfunction()
 
+# Sets <out> to TRUE when <candidate> is an internal resource object library created by Qt for <target>.
+# Qt's qt_add_resources and qt_add_shaders create static resource object libraries named <target>_resources_<n>
+# and mark them with _is_qt_propagated_object_library and _qt_resource_name.
+function(_ariadshot_arch_is_target_resource_library candidate target out)
+    set(is_resource FALSE)
+    if(candidate MATCHES "^${target}_resources_[0-9]+$" AND TARGET "${candidate}")
+        get_target_property(type "${candidate}" TYPE)
+        get_target_property(is_qt_res "${candidate}" _is_qt_propagated_object_library)
+        get_target_property(res_name "${candidate}" _qt_resource_name)
+        if(type STREQUAL "OBJECT_LIBRARY" AND (is_qt_res OR res_name))
+            set(is_resource TRUE)
+        endif()
+    endif()
+    set(${out} ${is_resource} PARENT_SCOPE)
+endfunction()
+
 # Returns the normalised direct link entries of <target>, and error lines for entries the check cannot interpret.
 function(_ariadshot_arch_direct_entries target label out_entries out_errors)
     set(entries "")
@@ -123,6 +141,18 @@ function(_ariadshot_arch_direct_entries target label out_entries out_errors)
                     list(APPEND errors "ariadshot-arch: ${label} imports ${plugin}, which is not a Qt module's plugin")
                     continue()
                 endif()
+            endif()
+            # Qt's resource object propagation expression for this target's own compiled resources.
+            if(value MATCHES "^(\\$<.*:)?\\$<TARGET_OBJECTS:(\\$<TARGET_NAME:)?([A-Za-z0-9_]+)>+$")
+                set(res_target "${CMAKE_MATCH_3}")
+                _ariadshot_arch_is_target_resource_library("${res_target}" "${target}" is_own_resource)
+                if(is_own_resource)
+                    continue()
+                endif()
+            endif()
+            _ariadshot_arch_is_target_resource_library("${value}" "${target}" is_own_target_res)
+            if(is_own_target_res)
+                continue()
             endif()
             if(value MATCHES "\\$<")
                 list(APPEND errors "ariadshot-arch: ${label} uses an unsupported generator expression: ${value}")
