@@ -19,6 +19,9 @@ SPDX-License-Identifier: GPL-3.0-only
 - **Accessible by construction.** Every chrome view object gives `accessibleName()` (through `tr()`) and
   `accessibleRole()`; a view with more to expose, such as text or a value, overrides `accessible()` and reports
   `accessibleParent()` and `screenRect()`. Qt wants screen coordinates, so a view never reports surface points.
+- **Containers declare their children.** A view whose `hitTest()` hands out another view adds it with `addChild()`: the
+  child gets its holder as accessible parent, its damage and screen position reach the root, and the holder's
+  interface lists it. The root announces a view that enters or leaves the tree to assistive technology.
 - **Input state follows the root, and the root never calls a destroyed view.** A press makes its view the pointer
   owner until every button is released; removing or destroying the owner, or its holder, cancels the gesture and the
   rest of it goes to no view. A view that answers the input method's queries is the input method owner

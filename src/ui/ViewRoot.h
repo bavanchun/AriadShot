@@ -36,11 +36,12 @@ class ViewRoot : public platform::SurfaceContent {
     // Sets the surface size in points and its scale; reallocates the chrome layer and damages the whole surface.
     void resize(QSize size, qreal scale);
 
-    // Takes a view object, in front of the ones added before, and returns it. The area it paints is damaged.
+    // Takes a view object, in front of the ones added before, and returns it; a view that is the child of another
+    // leaves it. The area it paints is damaged and assistive technology is told.
     ViewObject& addView(std::unique_ptr<ViewObject> view);
-    // Gives a view object back, or returns nullptr when this root does not hold it. The area it painted is damaged. A
-    // gesture that the view or part of it took the press of is cancelled. The caller clears the focus and input method
-    // owners that are part of the view first.
+    // Gives a view object back, or returns nullptr when this root does not hold it. The area it painted is damaged and
+    // assistive technology is told. A gesture that the view or part of it took the press of is cancelled. The caller
+    // clears the focus and input method owners that are part of the view first.
     std::unique_ptr<ViewObject> removeView(ViewObject& view);
 
     // The canonical layers, bottom first. The canvas owns the images and reports changes with ViewObject::update().

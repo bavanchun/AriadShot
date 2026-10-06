@@ -105,9 +105,8 @@ class GroupView final : public ViewObject {
   public:
     explicit GroupView(QRectF area, QString viewName = {}) : name(std::move(viewName)) { setGeometry(area); }
 
-    TestView& addNested(QRectF area, QString childName = {}) {
-        return static_cast<TestView&>(*nested.emplace_back(std::make_unique<TestView>(area, std::move(childName))));
-    }
+    TestView& addNested(QRectF area, QString childName = {}) { return add<TestView>(area, std::move(childName)); }
+    GroupView& addNestedGroup(QRectF area) { return add<GroupView>(area); }
     void paint(QPainter&) override {}
     ViewObject* hitTest(QPointF point) override {
         for (const auto& view : std::views::reverse(nested)) {
@@ -122,6 +121,15 @@ class GroupView final : public ViewObject {
 
     QString name;
     std::vector<std::unique_ptr<ViewObject>> nested; // back to front; erase one to destroy it while the group stays
+
+  private:
+    template <typename View, typename... Args> View& add(Args&&... args) {
+        auto& added = static_cast<View&>(*nested.emplace_back(std::make_unique<View>(std::forward<Args>(args)...)));
+        if (!addChild(added)) {
+            qFatal("the group's child was refused");
+        }
+        return added;
+    }
 };
 
 TestView& addView(ViewRoot& root, QRectF area) {
@@ -150,6 +158,51 @@ void mouse(ViewRoot& root, QEvent::Type type, QPointF position) {
 void drag(ViewRoot& root, QPointF position) {
     root.dispatch(QMouseEvent(QEvent::MouseMove, position, position, Qt::NoButton, Qt::LeftButton, Qt::NoModifier));
 }
+
+// The accessibility events seen while an ObservedAccessibility lives: what happened, to which interface, and where that
+// interface stood in the tree at the time.
+struct Change {
+    QAccessible::Event type;
+    QAccessibleInterface* node;
+    QAccessibleInterface* parent;
+    int index;
+    bool operator==(const Change&) const = default;
+};
+
+std::vector<Change>& changes() {
+    static std::vector<Change> recorded;
+    return recorded;
+}
+
+void recordChange(QAccessibleEvent* event) {
+    QAccessibleInterface* node = event->accessibleInterface();
+    QAccessibleInterface* parent = node != nullptr ? node->parent() : nullptr;
+    changes().push_back({.type = event->type(),
+                         .node = node,
+                         .parent = parent,
+                         .index = parent != nullptr ? parent->indexOfChild(node) : -1});
+}
+
+Change change(QAccessible::Event type, QAccessibleInterface* node, QAccessibleInterface* parent, int index) {
+    return {.type = type, .node = node, .parent = parent, .index = index};
+}
+
+// Switches accessibility on and records its events in changes() while it lives.
+class ObservedAccessibility {
+  public:
+    ObservedAccessibility() : m_previous(QAccessible::installUpdateHandler(&recordChange)) {
+        changes().clear();
+        QAccessible::setActive(true);
+    }
+    ~ObservedAccessibility() {
+        QAccessible::setActive(false);
+        QAccessible::installUpdateHandler(m_previous);
+    }
+    Q_DISABLE_COPY_MOVE(ObservedAccessibility)
+
+  private:
+    QAccessible::UpdateHandler m_previous;
+};
 
 // The host's accessible root: its one child is the content's accessible interface, as a host window would add it.
 class HostAccessible final : public QAccessibleInterface {
@@ -226,6 +279,7 @@ class ViewRootTest : public QObject {
     void aViewRemovingItselfOnPressCancelsTheRestOfTheGesture();
     void aViewRemovingItselfOnReleaseLeavesTheNextGestureAlone();
     void aCancelledGestureLastsUntilTheLastButtonIsReleased();
+    void removingAChildViewCancelsTheGestureItTook();
     void removingAnotherViewLeavesTheGestureAlone();
     void aMoveWithNoButtonHeldEndsACancelledGesture();
     void aPressAfterALostReleaseEndsACancelledGesture();
@@ -256,6 +310,13 @@ class ViewRootTest : public QObject {
     void keyboardModeIsReported();
     void viewObjectExposesAccessibleNameAndRole();
     void hostReachesTheAccessibleViewsAndLocatesThemOnTheScreen();
+    void nestedViewHasItsHolderAsAccessibleParentAndTheScreenMapping();
+    void nestedViewReportsItsDamageToTheRoot();
+    void childRelationRefusesCyclesAndViewsTheRootHolds();
+    void childAndParentForgetEachOtherWhenEitherIsDestroyed();
+    void addingAChildViewToTheRootTakesItOutOfItsParent();
+    void addingAndRemovingViewsAnnouncesTheTreeChange();
+    void destroyingTheRootDetachesItsViews();
     void hostPresentsContentThroughThePlatformInterfaces();
 };
 
@@ -433,6 +494,25 @@ void ViewRootTest::aCancelledGestureLastsUntilTheLastButtonIsReleased() {
 
     QVERIFY(behind.events.empty());
     mouse(root, QEvent::MouseButtonPress, {50, 50});
+    QCOMPARE(behind.events, Events{QEvent::MouseButtonPress});
+}
+
+// The same goes for a view that a holder takes out of its tree without destroying it, and for one deeper down.
+void ViewRootTest::removingAChildViewCancelsTheGestureItTook() {
+    ViewRoot root;
+    TestView& behind = addView(root, {0, 0, 100, 100});
+    GroupView& outer = addGroup(root, {10, 10, 40, 40});
+    GroupView& inner = outer.addNestedGroup({10, 10, 20, 20});
+    TestView& button = inner.addNested({10, 10, 10, 10});
+
+    mouse(root, QEvent::MouseButtonPress, {15, 15});
+    QVERIFY(outer.removeChild(inner));
+    drag(root, {70, 70});
+    mouse(root, QEvent::MouseButtonRelease, {70, 70});
+
+    QCOMPARE(button.events, Events{QEvent::MouseButtonPress});
+    QVERIFY(behind.events.empty());
+    mouse(root, QEvent::MouseButtonPress, {70, 70});
     QCOMPARE(behind.events, Events{QEvent::MouseButtonPress});
 }
 
@@ -963,6 +1043,169 @@ void ViewRootTest::hostReachesTheAccessibleViewsAndLocatesThemOnTheScreen() {
 
     origin = {0, 50};
     QCOMPARE(copy->rect(), QRect(50, 60, 20, 20));
+}
+
+// A view that hitTest() hands out is a child of its holder: the holder is its accessible parent, the screen mapping of
+// the host reaches it, and the holder's interface lists it (https://doc.qt.io/qt-6.8/qaccessibleinterface.html).
+void ViewRootTest::nestedViewHasItsHolderAsAccessibleParentAndTheScreenMapping() {
+    ViewRoot root;
+    root.resize({200, 100}, 1.0);
+    GroupView& group = addGroup(root, {10, 10, 100, 40}, u"Toolbar"_s);
+    TestView& save = group.addNested({20, 15, 20, 20}, u"Save"_s);
+    TestView& copy = group.addNested({50, 15, 20, 20}, u"Copy"_s);
+    HostAccessible host(root);
+    QPoint origin(1920, 100);
+    static_cast<SurfaceContent&>(root).attachAccessible(&host, [&origin](QPoint point) { return point + origin; });
+
+    QAccessibleInterface* content = host.child(0);
+    QAccessibleInterface* toolbar = content != nullptr ? content->child(0) : nullptr;
+    if (toolbar == nullptr) {
+        QFAIL("the content does not list the group");
+    }
+    QCOMPARE(toolbar->text(QAccessible::Name), u"Toolbar"_s);
+    QCOMPARE(toolbar->childCount(), 2);
+    QAccessibleInterface* saveNode = toolbar->child(0);
+    QAccessibleInterface* copyNode = toolbar->child(1);
+    if (saveNode == nullptr || copyNode == nullptr) {
+        QFAIL("the group does not list its children");
+    }
+    QCOMPARE(saveNode->text(QAccessible::Name), u"Save"_s);
+    QCOMPARE(copyNode->text(QAccessible::Name), u"Copy"_s);
+    QVERIFY(saveNode->parent() == toolbar);
+    QVERIFY(copyNode->parent() == toolbar);
+    QVERIFY(toolbar->child(2) == nullptr);
+    QCOMPARE(toolbar->indexOfChild(saveNode), 0);
+    QCOMPARE(toolbar->indexOfChild(copyNode), 1);
+    QCOMPARE(toolbar->indexOfChild(content), -1);
+    QCOMPARE(saveNode->rect(), QRect(1940, 115, 20, 20));
+    QVERIFY(toolbar->childAt(1945, 120) == saveNode);
+    QVERIFY(toolbar->childAt(1975, 120) == copyNode);
+    QVERIFY(toolbar->childAt(1935, 112) == nullptr); // inside the group, on none of its children
+    QVERIFY(content->childAt(1945, 120) == toolbar);
+
+    origin = {0, 50};
+    QCOMPARE(copyNode->rect(), QRect(50, 65, 20, 20));
+    QCOMPARE(save.screenRect(), QRect(20, 65, 20, 20));
+
+    // It is the view the root's hit test hands out, so it gets the events.
+    mouse(root, QEvent::MouseButtonPress, {25, 20});
+    QCOMPARE(save.events, Events{QEvent::MouseButtonPress});
+    QVERIFY(copy.events.empty());
+}
+
+void ViewRootTest::nestedViewReportsItsDamageToTheRoot() {
+    ViewRoot root;
+    root.resize({100, 100}, 1.0);
+    GroupView& group = addGroup(root, {10, 10, 60, 60});
+    (void)root.takeDamage();
+
+    TestView& nested = group.addNested({20, 20, 10, 10});
+    QCOMPARE(root.takeDamage(), QRegion(20, 20, 10, 10));
+
+    nested.setGeometry({40, 40, 10, 10});
+    QCOMPARE(root.takeDamage(), QRegion(20, 20, 10, 10).united(QRegion(40, 40, 10, 10)));
+
+    nested.update({41, 41, 2, 2});
+    QCOMPARE(root.takeDamage(), QRegion(41, 41, 2, 2));
+
+    QVERIFY(group.removeChild(nested));
+    QCOMPARE(root.takeDamage(), QRegion(40, 40, 10, 10));
+    nested.update({41, 41, 2, 2}); // no longer part of the tree
+    QVERIFY(root.takeDamage().isEmpty());
+}
+
+void ViewRootTest::childRelationRefusesCyclesAndViewsTheRootHolds() {
+    ViewRoot root;
+    TestView& held = addView(root, {0, 0, 10, 10});
+    TestView top({0, 0, 10, 10});
+    TestView middle({0, 0, 10, 10});
+    TestView bottom({0, 0, 10, 10});
+    QVERIFY(top.addChild(middle));
+    QVERIFY(middle.addChild(bottom));
+
+    QVERIFY(!top.addChild(top));    // itself
+    QVERIFY(!bottom.addChild(top)); // an ancestor: the parent chain would never end
+    QVERIFY(!middle.addChild(top));
+    QVERIFY(!top.addChild(held));  // a view the root holds is a top-level view
+    QVERIFY(top.addChild(middle)); // already its child: nothing changes
+    QCOMPARE(top.children(), (std::vector<ViewObject*>{&middle}));
+
+    QVERIFY(bottom.removeChild(top) == false); // not its child
+    QVERIFY(top.removeChild(middle));
+    QVERIFY(top.children().empty());
+    QVERIFY(!top.removeChild(middle));
+    QCOMPARE(middle.children(), (std::vector<ViewObject*>{&bottom}));
+
+    TestView other({0, 0, 10, 10});
+    QVERIFY(other.addChild(bottom)); // a child moves to its new parent
+    QVERIFY(middle.children().empty());
+    QCOMPARE(other.children(), (std::vector<ViewObject*>{&bottom}));
+}
+
+void ViewRootTest::childAndParentForgetEachOtherWhenEitherIsDestroyed() {
+    auto parent = std::make_unique<TestView>(QRectF(0, 0, 10, 10));
+    TestView firstChild({0, 0, 5, 5});
+    auto secondChild = std::make_unique<TestView>(QRectF(5, 5, 5, 5));
+    QVERIFY(parent->addChild(firstChild));
+    QVERIFY(parent->addChild(*secondChild));
+
+    secondChild.reset();
+    QCOMPARE(parent->children(), (std::vector<ViewObject*>{&firstChild}));
+
+    parent.reset();
+    QVERIFY(firstChild.accessibleParent() == nullptr);
+    firstChild.update({0, 0, 5, 5}); // reaches nothing, and nothing dangles
+    QCOMPARE(firstChild.screenRect(), QRect(0, 0, 5, 5));
+}
+
+void ViewRootTest::addingAChildViewToTheRootTakesItOutOfItsParent() {
+    ViewRoot root;
+    TestView parent({0, 0, 10, 10});
+    auto child = std::make_unique<TestView>(QRectF(0, 0, 5, 5));
+    QVERIFY(parent.addChild(*child));
+
+    ViewObject& held = root.addView(std::move(child));
+
+    QVERIFY(parent.children().empty());
+    QVERIFY(held.accessibleParent() == root.accessible());
+}
+
+// Assistive technology learns of a view added to or removed from the tree through the accessibility events of Qt
+// (https://doc.qt.io/qt-6.8/qaccessible.html): created once the view is in the tree, destroyed while it still is.
+void ViewRootTest::addingAndRemovingViewsAnnouncesTheTreeChange() {
+    ViewRoot root;
+    root.resize({100, 100}, 1.0);
+    const ObservedAccessibility observed;
+
+    GroupView& group = addGroup(root, {10, 10, 60, 60});
+    TestView& nested = group.addNested({20, 20, 10, 10});
+    QAccessibleInterface* groupNode = group.accessible();
+    QAccessibleInterface* nestedNode = nested.accessible();
+    QAccessibleInterface* rootNode = root.accessible();
+    QCOMPARE(changes(), (std::vector<Change>{change(QAccessible::ObjectCreated, groupNode, rootNode, 0),
+                                             change(QAccessible::ObjectCreated, nestedNode, groupNode, 0)}));
+
+    changes().clear();
+    QVERIFY(group.removeChild(nested));
+    QCOMPARE(changes(), (std::vector<Change>{change(QAccessible::ObjectDestroyed, nestedNode, groupNode, 0)}));
+
+    changes().clear();
+    const std::unique_ptr<ViewObject> removed = root.removeView(group);
+    QCOMPARE(changes(), (std::vector<Change>{change(QAccessible::ObjectDestroyed, groupNode, rootNode, 0)}));
+}
+
+// A view can call update() from its destructor; by then the root's members are gone, so the root lets go of its views
+// first.
+void ViewRootTest::destroyingTheRootDetachesItsViews() {
+    auto root = std::make_unique<ViewRoot>();
+    root->resize({100, 100}, 1.0);
+    GroupView& group = addGroup(*root, {10, 10, 60, 60});
+    TestView& nested = group.addNested({20, 20, 10, 10});
+    TestView& top = addView(*root, {0, 0, 5, 5});
+    nested.onDestroy = [&nested] { nested.update({20, 20, 10, 10}); };
+    top.onDestroy = [&top] { top.update({0, 0, 5, 5}); };
+
+    root.reset();
 }
 
 void ViewRootTest::hostPresentsContentThroughThePlatformInterfaces() {

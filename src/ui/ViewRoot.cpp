@@ -4,6 +4,7 @@
 #include "ui/ViewRoot.h"
 
 #include "render/CanonicalImage.h"
+#include "ui/AccessibleChildren.h"
 #include "ui/ViewObject.h"
 
 #include <QAccessibleInterface>
@@ -27,23 +28,13 @@ class ViewRoot::Accessible final : public QAccessibleInterface {
     bool isValid() const override { return true; }
     QObject* object() const override { return nullptr; }
     QAccessibleInterface* childAt(int x, int y) const override {
-        for (const auto& view : std::views::reverse(m_root.m_views)) {
-            if (view->screenRect().contains(x, y)) {
-                return view->accessible();
-            }
-        }
-        return nullptr;
+        return detail::accessibleChildAt(m_root.m_views, x, y);
     }
     QAccessibleInterface* parent() const override { return m_root.m_accessibleParent; }
-    QAccessibleInterface* child(int index) const override {
-        const bool held = index >= 0 && std::cmp_less(index, m_root.m_views.size());
-        return held ? m_root.m_views[static_cast<std::size_t>(index)]->accessible() : nullptr;
-    }
+    QAccessibleInterface* child(int index) const override { return detail::accessibleChild(m_root.m_views, index); }
     int childCount() const override { return static_cast<int>(m_root.m_views.size()); }
     int indexOfChild(const QAccessibleInterface* child) const override {
-        const auto held =
-            std::ranges::find_if(m_root.m_views, [child](const auto& view) { return view->accessible() == child; });
-        return held != m_root.m_views.end() ? static_cast<int>(held - m_root.m_views.begin()) : -1;
+        return detail::accessibleIndexOfChild(m_root.m_views, child);
     }
     QString text(QAccessible::Text) const override { return {}; }
     void setText(QAccessible::Text, const QString&) override {}
@@ -61,7 +52,12 @@ ViewRoot::Ref::Ref(ViewObject* view) : m_view(view) {
     }
 }
 
+// The views are destroyed after the root's other members, and a view's destructor may still report damage or ask for
+// its screen position; it has to find no root by then.
 ViewRoot::~ViewRoot() {
+    for (const auto& view : m_views) {
+        view->m_root = nullptr;
+    }
     if (m_accessibleId != 0) {
         QAccessible::deleteAccessibleInterface(m_accessibleId);
     }
@@ -76,8 +72,12 @@ void ViewRoot::resize(QSize size, qreal scale) {
 
 ViewObject& ViewRoot::addView(std::unique_ptr<ViewObject> view) {
     ViewObject& added = *m_views.emplace_back(std::move(view));
+    if (added.m_parent != nullptr) {
+        added.m_parent->removeChild(added);
+    }
     added.m_root = this;
     addDamage(added.paintBounds());
+    added.announce(QAccessible::ObjectCreated);
     return added;
 }
 
@@ -87,6 +87,7 @@ std::unique_ptr<ViewObject> ViewRoot::removeView(ViewObject& view) {
     if (held == m_views.end()) {
         return nullptr;
     }
+    (*held)->announce(QAccessible::ObjectDestroyed); // while it is still in the tree: bridges ask for its place
     std::unique_ptr<ViewObject> removed = std::move(*held);
     m_views.erase(held);
     removed->m_root = nullptr;
@@ -201,9 +202,13 @@ ViewRoot::Hit ViewRoot::hitAt(QPointF point) const {
     return {};
 }
 
-// The gesture whose owner is held by the view has no view to go to from now on.
+// The gesture whose owner is the view, or inside it, or held by it has no view to go to from now on.
 void ViewRoot::leftTheTree(const ViewObject& view) {
-    if (m_pointerOwner.holder == &view) {
+    bool inside = m_pointerOwner.holder == &view;
+    for (const ViewObject* owner = m_pointerOwner.view.get(); owner != nullptr && !inside; owner = owner->m_parent) {
+        inside = owner == &view;
+    }
+    if (inside) {
         m_pointerOwner.view = {};
     }
 }

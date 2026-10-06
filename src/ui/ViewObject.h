@@ -12,6 +12,7 @@
 
 #include <memory>
 #include <optional>
+#include <vector>
 
 class QEvent;
 class QInputMethodQueryEvent;
@@ -23,7 +24,8 @@ class ViewRoot;
 
 // One view of a surface: a ported MacShot view or a piece of chrome. Everything a view sees is in the surface's points:
 // its geometry, the positions of the events it receives, the damage it reports and what it paints. A view object is
-// held by one ViewRoot, which hit-tests it, delivers events to it and paints it into the chrome layer. Thread: GUI.
+// held by one ViewRoot, which hit-tests it, delivers events to it and paints it into the chrome layer; a view that is
+// not held by a root is the child of one that is. Thread: GUI.
 class ViewObject {
   public:
     ViewObject() = default;
@@ -43,7 +45,8 @@ class ViewObject {
     virtual void paint(QPainter& painter) = 0;
 
     // The view object that receives a pointer event at the point: this one, a descendant, or nullptr to let the view
-    // behind take it. It must not change the tree. The default accepts the points inside geometry().
+    // behind take it. A descendant is a child of this view (addChild()). It must not change the tree. The default
+    // accepts the points inside geometry().
     virtual ViewObject* hitTest(QPointF point);
     virtual void hoverChanged(bool /*hovered*/) {}
     // A press makes the view that hitTest() chose the owner of the pointer until every button is released: its moves
@@ -58,25 +61,45 @@ class ViewObject {
     [[nodiscard]] virtual std::optional<Qt::CursorShape> cursorAt(QPointF /*point*/) const { return Qt::ArrowCursor; }
     [[nodiscard]] virtual QString toolTip() const { return {}; }
 
+    // Declares a view a child of this one, in front of the children it has: the view a container's hitTest() hands out
+    // is its child. The child reports this view's interface as its accessible parent, and its damage and its screen
+    // position go through the root that holds this view. Nothing is owned: the holder keeps its children alive, and
+    // either side may be destroyed first. Adding damages what the child paints and tells assistive technology. Returns
+    // false, and changes nothing, for this view itself, one of its ancestors and a view a root holds; a child of
+    // another view moves.
+    [[nodiscard]] bool addChild(ViewObject& child);
+    // Takes a child out again; false when the view is not a child of this one.
+    bool removeChild(ViewObject& child);
+    [[nodiscard]] const std::vector<ViewObject*>& children() const { return m_children; }
+
     // Every view object is accessible: it names itself and gives its role. accessible() wraps the two in a Qt
-    // interface that the QAccessible registry owns; a view with more to say (text, value) overrides it and reports
-    // accessibleParent() and screenRect() like the default does.
+    // interface that the QAccessible registry owns, listing the children; a view with more to say (text, value)
+    // overrides it and reports accessibleParent() and screenRect() like the default does.
     [[nodiscard]] virtual QString accessibleName() const = 0;
     [[nodiscard]] virtual QAccessible::Role accessibleRole() const = 0;
     virtual QAccessibleInterface* accessible();
-    // The parent in the accessible tree: the interface of the root that holds this view, nullptr when none does.
+    // The parent in the accessible tree: the interface of the view this one is a child of, else of the root that holds
+    // it, nullptr when there is neither.
     [[nodiscard]] QAccessibleInterface* accessibleParent() const;
     // geometry() in screen coordinates, mapped by the host the root is attached to; the surface's own when it is not.
     [[nodiscard]] QRect screenRect() const;
 
-    // Marks an area as changed; the held-by root hands it to the host with the next takeDamage().
+    // Marks an area as changed; the root that holds the view, or its parent, hands it to the host with the next
+    // takeDamage().
     void update(QRectF damage);
 
   private:
     friend class ViewRoot;
 
+    // The root this view belongs to, through its parents; nullptr when it is in no tree.
+    [[nodiscard]] ViewRoot* root() const;
+    // Tells assistive technology that this view entered or left the tree, if any of it is listening.
+    void announce(QAccessible::Event event);
+
     QRectF m_geometry;
-    ViewRoot* m_root = nullptr;
+    ViewRoot* m_root = nullptr; // the holder of a top-level view
+    ViewObject* m_parent = nullptr;
+    std::vector<ViewObject*> m_children;
     QAccessible::Id m_accessibleId = 0;
     // Lets whoever points at a view without owning it (the root's owners of pointer, focus and input method, and the
     // hovered view) see that it is gone: they hold a weak reference and never call a view whose token has expired.
