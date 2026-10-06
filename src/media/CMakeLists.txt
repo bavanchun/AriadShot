@@ -22,7 +22,25 @@ if(Qt6_VERSION VERSION_GREATER_EQUAL 6.9)
 endif()
 find_package(Qt6 REQUIRED COMPONENTS ShaderTools)
 
+# Cache variable to allow forcing Vulkan support off for testing builds without Vulkan.
+option(ARIADSHOT_ENABLE_VULKAN "Enable Vulkan support when available in Qt and Vulkan headers are found" ON)
+
+# Determine whether Qt's Vulkan support is actually usable in this build.
+# Qt's qvulkaninstance.h and QRhi Vulkan backend require Vulkan headers (WrapVulkanHeaders / Vulkan::Headers)
+# to be present at application build time. If missing (e.g. linux-qt-floor CI), Vulkan cannot be used.
+set(ARIADSHOT_HAVE_VULKAN FALSE CACHE INTERNAL "Whether Qt Vulkan support is usable in this build")
+if(ARIADSHOT_MEDIA AND ARIADSHOT_ENABLE_VULKAN)
+    if((TARGET WrapVulkanHeaders::WrapVulkanHeaders OR TARGET Vulkan::Headers OR WrapVulkanHeaders_FOUND)
+       AND (NOT DEFINED QT_FEATURE_vulkan OR QT_FEATURE_vulkan))
+        set(ARIADSHOT_HAVE_VULKAN TRUE CACHE INTERNAL "Whether Qt Vulkan support is usable in this build")
+    endif()
+endif()
+
 ariadshot_add_module(NAME media KIND STATIC ALLOWED AriadShot::core AriadShot::render Qt6::GuiPrivate)
+
+if(ARIADSHOT_HAVE_VULKAN)
+    target_compile_definitions(ariadshot_media PUBLIC ARIADSHOT_HAVE_VULKAN)
+endif()
 
 target_sources(ariadshot_media PRIVATE
     studio/FrameScene.h

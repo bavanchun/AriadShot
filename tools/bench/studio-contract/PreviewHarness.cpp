@@ -17,7 +17,7 @@
 #include <QtGui/QImage>
 #include <QtGui/QOffscreenSurface>
 #include <QtGui/QPainter>
-#if QT_CONFIG(vulkan)
+#if defined(ARIADSHOT_HAVE_VULKAN)
 #include <QtGui/qvulkaninstance.h>
 #endif
 #include <QtGui/rhi/qrhi.h>
@@ -286,7 +286,7 @@ int main(int argc, char** argv) {
         QStringLiteral("%1x%2").arg(exportResolution.width()).arg(exportResolution.height());
 
     QRhiWidget::Api rhiApi = QRhiWidget::Api::OpenGL;
-#if QT_CONFIG(vulkan)
+#if defined(ARIADSHOT_HAVE_VULKAN)
     QVulkanInstance vkInst;
 #endif
     std::unique_ptr<QOffscreenSurface> glFallbackSurface;
@@ -298,8 +298,8 @@ int main(int argc, char** argv) {
         glFallbackSurface.reset(QRhiGles2InitParams::newFallbackSurface());
         glParams.fallbackSurface = glFallbackSurface.get();
         offscreenRhi.reset(QRhi::create(QRhi::OpenGLES2, &glParams));
-    } else {
-#if QT_CONFIG(vulkan)
+    } else if (apiStr == QStringLiteral("vulkan")) {
+#if defined(ARIADSHOT_HAVE_VULKAN)
         rhiApi = QRhiWidget::Api::Vulkan;
         if (vkInst.create()) {
             QRhiVulkanInitParams vkParams;
@@ -307,8 +307,12 @@ int main(int argc, char** argv) {
             offscreenRhi.reset(QRhi::create(QRhi::Vulkan, &vkParams));
         }
 #else
-        std::cerr << "Vulkan support not enabled in Qt\n";
+        std::cerr << "Vulkan API requested but Vulkan support is not available in this build\n";
+        return 1;
 #endif
+    } else {
+        std::cerr << "Unknown API requested: " << apiStr.toStdString() << "\n";
+        return 1;
     }
 
     // 1. Offscreen export path render

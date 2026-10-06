@@ -13,7 +13,7 @@
 #include <QtGui/QImage>
 #include <QtGui/QOffscreenSurface>
 #include <QtGui/QPainter>
-#if QT_CONFIG(vulkan)
+#if defined(ARIADSHOT_HAVE_VULKAN)
 #include <QtGui/qvulkaninstance.h>
 #endif
 #include <QtGui/rhi/qrhi.h>
@@ -174,7 +174,7 @@ FrameScene createTestScene(const QSize& size) {
 }
 
 struct RhiContext {
-#if QT_CONFIG(vulkan)
+#if defined(ARIADSHOT_HAVE_VULKAN)
     QVulkanInstance vkInst;
 #endif
     std::unique_ptr<QOffscreenSurface> fallbackSurface;
@@ -195,7 +195,7 @@ struct RhiContext {
                 return nullptr;
             }
         }
-#if QT_CONFIG(vulkan)
+#if defined(ARIADSHOT_HAVE_VULKAN)
         else if (apiName == QStringLiteral("vulkan")) {
             if (!ctx->vkInst.create()) {
                 if (error) {
@@ -314,9 +314,9 @@ class StudioCompositorRealTest : public QObject {
 };
 
 void StudioCompositorRealTest::initTestCase() {
-#if !QT_CONFIG(vulkan)
+#if !defined(ARIADSHOT_HAVE_VULKAN)
     if (sApiFilter == QStringLiteral("vulkan")) {
-        QFAIL("Vulkan is not supported in this Qt build");
+        QFAIL("Vulkan is not supported in this build");
     }
 #endif
 }
@@ -326,7 +326,7 @@ static void populateApiData() {
     if (sApiFilter.isEmpty() || sApiFilter == QStringLiteral("opengl")) {
         QTest::newRow("OpenGL") << QStringLiteral("opengl");
     }
-#if QT_CONFIG(vulkan)
+#if defined(ARIADSHOT_HAVE_VULKAN)
     if (sApiFilter.isEmpty() || sApiFilter == QStringLiteral("vulkan")) {
         QTest::newRow("Vulkan") << QStringLiteral("vulkan");
     }
@@ -346,7 +346,7 @@ void StudioCompositorRealTest::apiIsAssertedNeverSilentlySwitched() {
     if (apiName == QStringLiteral("opengl")) {
         QCOMPARE(QLatin1StringView(ctx->rhi->backendName()), QLatin1StringView("OpenGL"));
     }
-#if QT_CONFIG(vulkan)
+#if defined(ARIADSHOT_HAVE_VULKAN)
     else if (apiName == QStringLiteral("vulkan")) {
         QCOMPARE(QLatin1StringView(ctx->rhi->backendName()), QLatin1StringView("Vulkan"));
     }
@@ -422,7 +422,7 @@ void StudioCompositorRealTest::previewGrabMatchesPreEncode() {
     if (apiName == QStringLiteral("opengl")) {
         widget.setApi(QRhiWidget::Api::OpenGL);
     }
-#if QT_CONFIG(vulkan)
+#if defined(ARIADSHOT_HAVE_VULKAN)
     else if (apiName == QStringLiteral("vulkan")) {
         widget.setApi(QRhiWidget::Api::Vulkan);
     }
