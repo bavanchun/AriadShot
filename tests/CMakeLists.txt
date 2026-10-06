@@ -244,6 +244,13 @@ ariadshot_add_test(NAME media.studio-compositor
     LIBS AriadShot::media ariadshot_test_support Qt6::GuiPrivate Qt6::Widgets
     LABELS unit)
 
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    ariadshot_add_test(NAME media.studio-compositor-wayland
+        SOURCES unit/media/tst_StudioCompositor.cpp
+        LIBS AriadShot::media ariadshot_test_support Qt6::GuiPrivate Qt6::Widgets
+        LABELS wayland gpu)
+endif()
+
 # --- Tests of the build system and the repository scripts ------------------------------------------------------------
 #
 # Negative cases pass only when the checker prints its own message for the rule under test (PASS_REGULAR_EXPRESSION),
