@@ -113,6 +113,14 @@ void StudioCompositorTest::renderRejectsInvalidSceneOrNullTargetsOnNullBackend()
     const QSize size(640, 480);
     const FrameScene validScene = FrameSceneBuilder::build(createSampleFrame(size, Qt::red), 0);
     QVERIFY(!compositor->render(validScene, nullptr, nullptr));
+
+    std::unique_ptr<QRhiTexture> tex(rhi->newTexture(QRhiTexture::RGBA8, size, 1, QRhiTexture::RenderTarget));
+    QVERIFY(tex->create());
+    QRhiColorAttachment att(tex.get());
+    std::unique_ptr<QRhiTextureRenderTarget> rt(rhi->newTextureRenderTarget({att}));
+    QRhiCommandBuffer* cb = nullptr;
+    // Target without render pass descriptor must report failure and not crash
+    QVERIFY(!compositor->render(validScene, rt.get(), cb));
 }
 
 void StudioCompositorTest::renderReportsFailureOnInvalidInputs() {

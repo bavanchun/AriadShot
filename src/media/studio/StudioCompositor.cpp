@@ -87,7 +87,7 @@ class RhiStudioCompositor final : public StudioCompositor {
     }
 
     bool render(const FrameScene& scene, QRhiRenderTarget* target, QRhiCommandBuffer* cb) override {
-        if (!m_rhi || !target || !cb || !scene.isValid()) {
+        if (!m_rhi || !target || !cb || !scene.isValid() || !target->renderPassDescriptor()) {
             return false;
         }
 
@@ -98,6 +98,10 @@ class RhiStudioCompositor final : public StudioCompositor {
         QRhiResourceUpdateBatch* u = m_rhi->nextResourceUpdateBatch();
         if (!ensureResources(scene.canvasSize(), target, u)) {
             u->release();
+            if (!m_vertexBufferUploaded) {
+                delete m_vertexBuffer;
+                m_vertexBuffer = nullptr;
+            }
             return false;
         }
 
@@ -116,6 +120,7 @@ class RhiStudioCompositor final : public StudioCompositor {
         }
 
         cb->resourceUpdate(u);
+        m_vertexBufferUploaded = true;
 
         // Pass 1 (+ Pass 2): Render to RGBA16F linear working target
         cb->beginPass(m_workingRenderTarget, Qt::transparent, {1.0f, 0});
@@ -151,11 +156,15 @@ class RhiStudioCompositor final : public StudioCompositor {
 
   private:
     bool ensureResources(const QSize& size, QRhiRenderTarget* target, QRhiResourceUpdateBatch* u) {
-        if (!m_rhi) {
+        if (!m_rhi || !target || !target->renderPassDescriptor()) {
             return false;
         }
 
-        if (!m_vertexBuffer) {
+        if (!m_vertexBuffer || !m_vertexBufferUploaded) {
+            delete m_vertexBuffer;
+            m_vertexBuffer = nullptr;
+            m_vertexBufferUploaded = false;
+
             const float topY = m_rhi->isYUpInNDC() ? 1.0f : -1.0f;
             const float bottomY = m_rhi->isYUpInNDC() ? -1.0f : 1.0f;
 
@@ -198,6 +207,8 @@ class RhiStudioCompositor final : public StudioCompositor {
         }
 
         if (m_allocatedSize != size) {
+            m_allocatedSize = QSize();
+
             delete m_sourcePipeline;
             m_sourcePipeline = nullptr;
             delete m_overlayPipeline;
@@ -221,6 +232,11 @@ class RhiStudioCompositor final : public StudioCompositor {
             delete m_overlayTexture;
             m_overlayTexture = nullptr;
             m_targetPassDesc.reset();
+
+            const int maxTextureSize = m_rhi->resourceLimit(QRhi::TextureSizeMax);
+            if (maxTextureSize > 0 && (size.width() > maxTextureSize || size.height() > maxTextureSize)) {
+                return false;
+            }
 
             m_sourceTexture = m_rhi->newTexture(QRhiTexture::RGBA8, size, 1, {});
             if (!m_sourceTexture->create()) {
@@ -364,6 +380,7 @@ class RhiStudioCompositor final : public StudioCompositor {
 
     QRhi* m_rhi = nullptr;
     QRhiBuffer* m_vertexBuffer = nullptr;
+    bool m_vertexBufferUploaded = false;
     QRhiSampler* m_sampler = nullptr;
     QSize m_allocatedSize;
 

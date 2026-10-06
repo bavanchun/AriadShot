@@ -310,6 +310,9 @@ class StudioCompositorRealTest : public QObject {
     void renderTwoSizesInARow();
     void renderTwoSizesInARow_data();
 
+    void failedRecreateRecoversCleanly();
+    void failedRecreateRecoversCleanly_data();
+
     void initTestCase();
 };
 
@@ -489,6 +492,76 @@ void StudioCompositorRealTest::renderTwoSizesInARow() {
     QCOMPARE(img3.size(), size1);
     QCOMPARE(img1.sizeInBytes(), img3.sizeInBytes());
     QCOMPARE(std::memcmp(img1.constBits(), img3.constBits(), img1.sizeInBytes()), 0);
+}
+
+void StudioCompositorRealTest::failedRecreateRecoversCleanly_data() { populateApiData(); }
+
+void StudioCompositorRealTest::failedRecreateRecoversCleanly() {
+    QFETCH(QString, apiName);
+    QString error;
+    auto ctx = RhiContext::create(apiName, &error);
+    if (!ctx) {
+        QFAIL(qPrintable(error));
+    }
+
+    const QSize validSize(160, 120);
+    const FrameScene validScene = createTestScene(validSize);
+    const QImage refImage = computeCpuReference(validScene);
+
+    std::unique_ptr<QRhiTexture> finalTex(ctx->rhi->newTexture(
+        QRhiTexture::RGBA8, validSize, 1, QRhiTexture::RenderTarget | QRhiTexture::UsedAsTransferSource));
+    QVERIFY(finalTex->create());
+    QRhiColorAttachment att(finalTex.get());
+    std::unique_ptr<QRhiTextureRenderTarget> rt(ctx->rhi->newTextureRenderTarget({att}));
+    std::unique_ptr<QRhiRenderPassDescriptor> rpDesc(rt->newCompatibleRenderPassDescriptor());
+    rt->setRenderPassDescriptor(rpDesc.get());
+    QVERIFY(rt->create());
+
+    // 1. Initial successful render at validSize
+    const QImage img1 = renderOffscreenToImage(ctx->rhi.get(), ctx->compositor.get(), validScene);
+    QVERIFY(!img1.isNull());
+    const ComparisonResult res1 = ImageCompare::comparePerceptual(img1, refImage, ImageCompare::kPresentation);
+    QVERIFY(res1.passed);
+
+    // 2. An oversized render attempt that fails recreate
+    const int maxTex = std::max(ctx->rhi->resourceLimit(QRhi::TextureSizeMax), 4096);
+    const int oversizedDim = maxTex + 1024;
+    uchar dummyByte = 0;
+    const QImage oversizedSrc(&dummyByte, oversizedDim, oversizedDim, static_cast<qsizetype>(oversizedDim) * 4,
+                              QImage::Format_RGBA8888);
+    const FrameScene oversizedScene = FrameSceneBuilder::build(oversizedSrc, 0);
+    QVERIFY(oversizedScene.isValid());
+
+    QRhiCommandBuffer* cb = nullptr;
+    QCOMPARE(ctx->rhi->beginOffscreenFrame(&cb), QRhi::FrameOpSuccess);
+    // Rendering oversized canvas must fail cleanly and not crash
+    const bool oversizedResult = ctx->compositor->render(oversizedScene, rt.get(), cb);
+    QVERIFY(!oversizedResult);
+    QCOMPARE(ctx->rhi->endOffscreenFrame(), QRhi::FrameOpSuccess);
+    ctx->rhi->finish();
+
+    // 3. Render at validSize again: verifies recovery from failed recreate without crash or stale state
+    const QImage img2 = renderOffscreenToImage(ctx->rhi.get(), ctx->compositor.get(), validScene);
+    QVERIFY(!img2.isNull());
+    QCOMPARE(img2.size(), validSize);
+    const ComparisonResult res2 = ImageCompare::comparePerceptual(img2, refImage, ImageCompare::kPresentation);
+    QVERIFY(res2.passed);
+
+    // 4. Test on a fresh compositor instance: first render fails, second succeeds (verifies vertex buffer re-upload)
+    auto freshCompositor = StudioCompositor::create(ctx->rhi.get());
+    QVERIFY(freshCompositor != nullptr);
+
+    QCOMPARE(ctx->rhi->beginOffscreenFrame(&cb), QRhi::FrameOpSuccess);
+    const bool freshFailResult = freshCompositor->render(oversizedScene, rt.get(), cb);
+    QVERIFY(!freshFailResult);
+    QCOMPARE(ctx->rhi->endOffscreenFrame(), QRhi::FrameOpSuccess);
+    ctx->rhi->finish();
+
+    const QImage img3 = renderOffscreenToImage(ctx->rhi.get(), freshCompositor.get(), validScene);
+    QVERIFY(!img3.isNull());
+    QCOMPARE(img3.size(), validSize);
+    const ComparisonResult res3 = ImageCompare::comparePerceptual(img3, refImage, ImageCompare::kPresentation);
+    QVERIFY(res3.passed);
 }
 
 int main(int argc, char** argv) {
