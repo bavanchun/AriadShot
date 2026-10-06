@@ -12,8 +12,9 @@ Full rules: `docs/dev/testing.md`. Strategy: `docs/spec/12-testing-strategy.md`.
   debug-information downloads, and a fresh home and XDG directory set under the build directory. Tests never touch
   the user's configuration, history, sockets, tray, shortcuts or clipboard.
 - **Names describe behaviour**, never ledger, deviation, gate or milestone IDs. File names: `tst_<Topic>.cpp`.
-- **Labels:** `unit`, `golden`, `wayland` (headless Sway), `nested-hyprland`, `live` (owner-approved runs) and
-  `tsan-safe` (no Qt threading). The `dev` and `asan` presets exclude `wayland`, `nested-hyprland` and `live`.
+- **Labels:** `unit`, `golden`, `wayland` (headless Sway), `nested-hyprland`, `live` (owner-approved runs),
+  `gpu` (hardware GPU or VA-API) and `tsan-safe` (no Qt threading). The `dev`, `asan` and `release` presets exclude
+  `wayland`, `nested-hyprland`, `live` and `gpu`.
 - **Assert MacShot values** from the parity ledger with their `macshot/<path>:<line>@b4d4f3a` source, never the
   AriadShot constant under test.
 - **Goldens:** compare through `tests/support/ImageCompare`. Never create or update a golden image to make a test pass;

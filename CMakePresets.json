@@ -110,7 +110,7 @@
       "inherits": "common",
       "filter": {
         "exclude": {
-          "label": "^(wayland|nested-hyprland|live)$"
+          "label": "^(wayland|nested-hyprland|live|gpu)$"
         }
       }
     },

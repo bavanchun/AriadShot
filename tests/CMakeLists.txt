@@ -239,6 +239,35 @@ ariadshot_add_test(NAME ui.view-root
     LIBS AriadShot::ui Qt6::GuiPrivate
     LABELS unit)
 
+if(ARIADSHOT_MEDIA)
+    ariadshot_add_test(NAME media.studio-compositor
+        SOURCES unit/media/tst_StudioCompositor.cpp
+        LIBS AriadShot::media ariadshot_test_support Qt6::GuiPrivate
+        LABELS unit)
+
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+        add_executable(tst_media_studio_compositor_real unit/media/tst_StudioCompositorReal.cpp)
+        target_link_libraries(tst_media_studio_compositor_real PRIVATE
+            Qt6::Test
+            AriadShot::options
+            AriadShot::media
+            ariadshot_test_support
+            Qt6::GuiPrivate
+            Qt6::Widgets
+        )
+
+        add_test(NAME media.studio-compositor-opengl COMMAND tst_media_studio_compositor_real --api opengl)
+        set_tests_properties(media.studio-compositor-opengl PROPERTIES LABELS wayland)
+        ariadshot_wayland_test_environment(media.studio-compositor-opengl)
+
+        if(ARIADSHOT_HAVE_VULKAN)
+            add_test(NAME media.studio-compositor-vulkan COMMAND tst_media_studio_compositor_real --api vulkan)
+            set_tests_properties(media.studio-compositor-vulkan PROPERTIES LABELS gpu)
+            ariadshot_wayland_test_environment(media.studio-compositor-vulkan)
+        endif()
+    endif()
+endif()
+
 # --- Tests of the build system and the repository scripts ------------------------------------------------------------
 #
 # Negative cases pass only when the checker prints its own message for the rule under test (PASS_REGULAR_EXPRESSION),
@@ -318,6 +347,9 @@ ariadshot_add_architecture_fixture(arch-qt-plugin-forbidden
     EXPECT "ariadshot-arch: core may not link Qt6::Gui \\(allowed: Qt6::Core\\)")
 ariadshot_add_architecture_fixture(arch-qt-plugin-not-a-plugin
     EXPECT "ariadshot-arch: app imports Qt6::Gui, which is not a Qt module's plugin")
+ariadshot_add_architecture_fixture(arch-qt-resource-allowed)
+ariadshot_add_architecture_fixture(arch-qt-resource-forbidden
+    EXPECT "ariadshot-arch: app may not link ariadshot_other_resources_1 \\(allowed: Qt6::Core\\)")
 
 # Include rules of scripts/check-architecture.sh, on small source trees.
 function(ariadshot_add_include_case case)

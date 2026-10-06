@@ -70,9 +70,10 @@ Notes:
 
 - CTest names are `<module>.<topic>` and describe behaviour. Test names never contain ledger, deviation, gate or
   milestone identifiers; the ledger maps identifiers to test names (§5).
-- Labels: `unit`, `golden`, `wayland` (tier 2), `nested-hyprland` (tier 3), `live` (tier 4), `tsan-safe` (code without
-  Qt threading, run under TSan). The `dev`, `asan` and `release` test presets exclude `wayland`, `nested-hyprland` and
-  `live`; the `tsan` preset runs `tsan-safe` only.
+- Labels: `unit`, `golden`, `wayland` (tier 2), `nested-hyprland` (tier 3), `live` (tier 4),
+  `gpu` (hardware GPU or VA-API), `tsan-safe` (code without Qt threading, run under TSan). The `dev`, `asan` and
+  `release` test presets exclude `wayland`, `nested-hyprland`, `live` and `gpu`; the `tsan` preset runs `tsan-safe`
+  only.
 - Every test is declared through `ariadshot_add_test(NAME … SOURCES … LIBS … LABELS …)` in `tests/CMakeLists.txt`.
 
 ### 3.3 Neutral test environment
