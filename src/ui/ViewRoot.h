@@ -40,8 +40,8 @@ class ViewRoot : public platform::SurfaceContent {
     // leaves it. The area it paints is damaged and assistive technology is told.
     ViewObject& addView(std::unique_ptr<ViewObject> view);
     // Gives a view object back, or returns nullptr when this root does not hold it. The area it painted is damaged and
-    // assistive technology is told. A gesture that the view or part of it took the press of is cancelled. The caller
-    // clears the focus and input method owners that are part of the view first.
+    // assistive technology is told. A gesture that the view or part of it took the press of is cancelled, and focus
+    // and input method owners that are part of the view are cleared.
     std::unique_ptr<ViewObject> removeView(ViewObject& view);
 
     // The canonical layers, bottom first. The canvas owns the images and reports changes with ViewObject::update().

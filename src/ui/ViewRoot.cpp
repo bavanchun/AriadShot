@@ -71,7 +71,7 @@ void ViewRoot::resize(QSize size, qreal scale) {
 }
 
 ViewObject& ViewRoot::addView(std::unique_ptr<ViewObject> view) {
-    if (view->m_parent != nullptr) {
+    while (view->m_parent != nullptr) {
         view->m_parent->removeChild(*view);
     }
     ViewObject& added = *m_views.emplace_back(std::move(view));
@@ -83,27 +83,41 @@ ViewObject& ViewRoot::addView(std::unique_ptr<ViewObject> view) {
 }
 
 std::unique_ptr<ViewObject> ViewRoot::removeView(ViewObject& view) {
-    const auto held =
-        std::ranges::find_if(m_views, [&view](const auto& candidate) { return candidate.get() == &view; });
+    if (view.m_removing) {
+        return nullptr;
+    }
+    auto held = std::ranges::find_if(m_views, [&view](const auto& candidate) { return candidate.get() == &view; });
     if (held == m_views.end()) {
         return nullptr;
     }
+
+    view.m_removing = true;
+    const std::weak_ptr<void> alive = view.m_lifetime;
+
+    if (view.m_accessibleId != 0 && !view.m_destroyedAnnounced) {
+        view.announce(QAccessible::ObjectDestroyed);
+    }
+    if (alive.expired()) {
+        return nullptr;
+    }
+
+    held = std::ranges::find_if(m_views, [&view](const auto& candidate) { return candidate.get() == &view; });
+    if (held == m_views.end()) {
+        view.m_removing = false;
+        return nullptr;
+    }
+
     std::unique_ptr<ViewObject> removed = std::move(*held);
     m_views.erase(held);
+    removed->m_removing = false;
+    removed->m_formerAccessibleParent = accessible();
     removed->m_root = nullptr;
     addDamage(removed->paintBounds());
-    if (m_focusOwner.get() == removed.get()) {
-        m_focusOwner = {};
-    }
-    if (m_inputMethodOwner.get() == removed.get()) {
-        m_inputMethodOwner = {};
-    }
     leftTheTree(*removed);
     // The hovered view object may be the removed one or part of it; it learns that the pointer left before it goes.
     if (m_hovered.get() != nullptr) {
         updateHover(true);
     }
-    removed->announce(QAccessible::ObjectDestroyed);
     return removed;
 }
 
@@ -204,6 +218,7 @@ ViewRoot::Hit ViewRoot::hitAt(QPointF point) const {
 }
 
 // The gesture whose owner is the view, or inside it, or held by it has no view to go to from now on.
+// Descendants also give up focus and input method ownership.
 void ViewRoot::leftTheTree(const ViewObject& view) {
     bool inside = m_pointerOwner.holder == &view;
     for (const ViewObject* owner = m_pointerOwner.view.get(); owner != nullptr && !inside; owner = owner->m_parent) {
@@ -211,6 +226,18 @@ void ViewRoot::leftTheTree(const ViewObject& view) {
     }
     if (inside) {
         m_pointerOwner.view = {};
+    }
+    for (const ViewObject* owner = m_focusOwner.get(); owner != nullptr; owner = owner->m_parent) {
+        if (owner == &view) {
+            m_focusOwner = {};
+            break;
+        }
+    }
+    for (const ViewObject* owner = m_inputMethodOwner.get(); owner != nullptr; owner = owner->m_parent) {
+        if (owner == &view) {
+            m_inputMethodOwner = {};
+            break;
+        }
     }
 }
 

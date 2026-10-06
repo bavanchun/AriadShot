@@ -20,6 +20,7 @@ class QPainter;
 
 namespace ariadshot::ui {
 
+class ViewObjectAccessible;
 class ViewRoot;
 
 // One view of a surface: a ported MacShot view or a piece of chrome. Everything a view sees is in the surface's points:
@@ -90,6 +91,7 @@ class ViewObject {
 
   private:
     friend class ViewRoot;
+    friend class ViewObjectAccessible;
 
     // The root this view belongs to, through its parents; nullptr when it is in no tree.
     [[nodiscard]] ViewRoot* root() const;
@@ -99,12 +101,16 @@ class ViewObject {
     QRectF m_geometry;
     ViewRoot* m_root = nullptr; // the holder of a top-level view
     ViewObject* m_parent = nullptr;
+    QAccessibleInterface* m_formerAccessibleParent = nullptr;
     std::vector<ViewObject*> m_children;
     QAccessible::Id m_accessibleId = 0;
     // Lets whoever points at a view without owning it (the root's owners of pointer, focus and input method, and the
     // hovered view) see that it is gone: they hold a weak reference and never call a view whose token has expired.
     std::shared_ptr<void> m_lifetime = std::make_shared<char>();
     QRectF m_lastPaintBounds;
+    bool m_dying = false;
+    bool m_removing = false;
+    bool m_destroyedAnnounced = false;
 };
 
 } // namespace ariadshot::ui

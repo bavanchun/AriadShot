@@ -188,7 +188,28 @@ std::function<void(QAccessibleEvent*)>& accessibilityCallback() {
 
 void recordChange(QAccessibleEvent* event) {
     QAccessibleInterface* node = event->accessibleInterface();
+    if (event->type() == QAccessible::ObjectDestroyed) {
+        if (node == nullptr) {
+            return;
+        }
+        for (const auto& change : std::views::reverse(changes())) {
+            if (change.node == node) {
+                if (change.type == QAccessible::ObjectDestroyed) {
+                    return; // Ignore duplicate destruction event from Qt deleteInterface
+                }
+                break;
+            }
+        }
+    }
     QAccessibleInterface* parent = node != nullptr ? node->parent() : nullptr;
+    if (event->type() == QAccessible::ObjectDestroyed && node != nullptr) {
+        // Behaves like the Linux screen-reader bridge (atspiadaptor.cpp):
+        // for every ObjectDestroyed it requires a non-null parent() and calls role().
+        if (parent == nullptr) {
+            qFatal("recordChange: ObjectDestroyed announced with null parent()");
+        }
+        [[maybe_unused]] const QAccessible::Role role = node->role();
+    }
     changes().push_back({.type = event->type(),
                          .node = node,
                          .parent = parent,
@@ -303,6 +324,7 @@ class ViewRootTest : public QObject {
     void descendantDestroyedWhileThePointerIsElsewhereCancelsTheGesture();
     void hoveredDescendantDestroyedByItsHolderIsNotNotified();
     void focusAndInputMethodOwnersDestroyedByTheirHolderReceiveNothing();
+    void focusAndInputMethodOwnersRemovedReceiveNothing();
     void passThroughViewLetsTheViewBehindReceiveTheEvent();
     void wheelAndTabletEventsRouteLikeMouseEvents();
     void hoverFollowsThePointer();
@@ -643,6 +665,23 @@ void ViewRootTest::focusAndInputMethodOwnersDestroyedByTheirHolderReceiveNothing
     QInputMethodQueryEvent query(Qt::ImEnabled);
     root.inputMethodQuery(query);
 
+    QCOMPARE(query.value(Qt::ImEnabled), QVariant(false));
+}
+
+void ViewRootTest::focusAndInputMethodOwnersRemovedReceiveNothing() {
+    ViewRoot root;
+    GroupView& holder = addGroup(root, {10, 10, 40, 40});
+    TestView& child = holder.addNested({10, 10, 20, 20});
+    root.setFocusOwner(&child);
+    root.setInputMethodOwner(&child);
+
+    holder.removeChild(child);
+    root.dispatch(QKeyEvent(QEvent::KeyPress, Qt::Key_A, Qt::NoModifier));
+    root.dispatch(QInputMethodEvent(u"a"_s, {}));
+    QInputMethodQueryEvent query(Qt::ImEnabled);
+    root.inputMethodQuery(query);
+
+    QCOMPARE(child.events, Events{});
     QCOMPARE(query.value(Qt::ImEnabled), QVariant(false));
 }
 
@@ -1206,11 +1245,11 @@ void ViewRootTest::addingAndRemovingViewsAnnouncesTheTreeChange() {
 
     changes().clear();
     QVERIFY(group.removeChild(nested));
-    QCOMPARE(changes(), (std::vector<Change>{change(QAccessible::ObjectDestroyed, nestedNode, nullptr, -1)}));
+    QCOMPARE(changes(), (std::vector<Change>{change(QAccessible::ObjectDestroyed, nestedNode, groupNode, 0)}));
 
     changes().clear();
     const std::unique_ptr<ViewObject> removed = root.removeView(group);
-    QCOMPARE(changes(), (std::vector<Change>{change(QAccessible::ObjectDestroyed, groupNode, nullptr, -1)}));
+    QCOMPARE(changes(), (std::vector<Change>{change(QAccessible::ObjectDestroyed, groupNode, rootNode, 0)}));
 }
 
 // A view can call update() from its destructor; by then the root's members are gone, so the root lets go of its views
@@ -1239,12 +1278,34 @@ void ViewRootTest::destroyingChildDirectlyDamagesOldBoundsAndAnnouncesDestructio
     const ObservedAccessibility observed;
     changes().clear();
     QAccessibleInterface* childNode = child.accessible();
+    QAccessibleInterface* groupNode = group.accessible();
+
+    bool bridgeChecked = false;
+    accessibilityCallback() = [&](QAccessibleEvent* event) {
+        if (event->type() == QAccessible::ObjectDestroyed && event->accessibleInterface() == childNode) {
+            QAccessibleInterface* iface = event->accessibleInterface();
+            QVERIFY(iface->parent() != nullptr);
+            QCOMPARE(iface->role(), QAccessible::PushButton);
+            bridgeChecked = true;
+        }
+    };
 
     group.nested.clear();
+    accessibilityCallback() = nullptr;
 
-    QCOMPARE(changes(), (std::vector<Change>{change(QAccessible::ObjectDestroyed, childNode, nullptr, -1)}));
+    QVERIFY(bridgeChecked);
+    QCOMPARE(changes(), (std::vector<Change>{change(QAccessible::ObjectDestroyed, childNode, groupNode, 0)}));
     QCOMPARE(root.takeDamage(), QRegion(10, 10, 20, 20));
     QCOMPARE(chrome.pixelColor(15, 15).alpha(), 0);
+
+    // Updating reach without moving updates the saved paint bounds so direct destruction damages the full area.
+    TestView& childWithShadow = group.addNested({40, 40, 20, 20});
+    (void)root.takeDamage();
+    childWithShadow.shadow = 10;
+    childWithShadow.update(childWithShadow.paintBounds());
+    (void)root.takeDamage();
+    group.nested.clear();
+    QCOMPARE(root.takeDamage(), QRegion(30, 30, 40, 40));
 }
 
 void ViewRootTest::childRemovalAndReparentingInsideNotificationHandlerIsSafe() {
@@ -1297,6 +1358,37 @@ void ViewRootTest::childRemovalAndReparentingInsideNotificationHandlerIsSafe() {
     accessibilityCallback() = nullptr;
     QVERIFY(!reentrantResult);
     QVERIFY(group1.children().empty());
+
+    // Move-path: addChild() triggers removeChild() on the previous parent.
+    // If the handler destroys the moving child during the removal notification, addChild returns false.
+    GroupView& group3 = addGroup(root, {0, 0, 40, 40});
+    GroupView& group4 = addGroup(root, {50, 0, 40, 40});
+    TestView& moving1 = group3.addNested({5, 5, 10, 10});
+    QAccessibleInterface* moving1Node = moving1.accessible();
+    accessibilityCallback() = [&](QAccessibleEvent* event) {
+        if (event->type() == QAccessible::ObjectDestroyed && event->accessibleInterface() == moving1Node) {
+            group3.nested.clear();
+        }
+    };
+    QVERIFY(!group4.addChild(moving1));
+    accessibilityCallback() = nullptr;
+    QVERIFY(group3.children().empty());
+    QVERIFY(group4.children().empty());
+
+    // Move-path: if handler reparents the moving child during removal notification, addChild returns false.
+    GroupView& group5 = addGroup(root, {0, 50, 40, 40});
+    TestView& moving2 = group3.addNested({5, 5, 10, 10});
+    QAccessibleInterface* moving2Node = moving2.accessible();
+    accessibilityCallback() = [&](QAccessibleEvent* event) {
+        if (event->type() == QAccessible::ObjectDestroyed && event->accessibleInterface() == moving2Node) {
+            QVERIFY(group5.addChild(moving2));
+        }
+    };
+    QVERIFY(!group4.addChild(moving2));
+    accessibilityCallback() = nullptr;
+    QVERIFY(group3.children().empty());
+    QVERIFY(group4.children().empty());
+    QCOMPARE(group5.children(), (std::vector<ViewObject*>{&moving2}));
 }
 
 void ViewRootTest::topLevelRemovalAndReparentingInsideNotificationHandlerIsSafe() {

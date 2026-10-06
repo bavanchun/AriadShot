@@ -14,13 +14,12 @@
 
 namespace ariadshot::ui {
 
-namespace {
-
 // Presents a view object to the accessibility bridges: its name, its role, where it is on the screen, its place under
 // its parent and its children.
 class ViewObjectAccessible final : public QAccessibleInterface {
   public:
-    explicit ViewObjectAccessible(ViewObject& view) : m_view(view) {}
+    explicit ViewObjectAccessible(ViewObject& view)
+        : m_view(view), m_cachedRole(view.accessibleRole()), m_cachedName(view.accessibleName()) {}
 
     bool isValid() const override { return true; }
     QObject* object() const override { return nullptr; }
@@ -34,33 +33,58 @@ class ViewObjectAccessible final : public QAccessibleInterface {
         return detail::accessibleIndexOfChild(m_view.children(), child);
     }
     QString text(QAccessible::Text text) const override {
-        return text == QAccessible::Name ? m_view.accessibleName() : QString();
+        if (text == QAccessible::Name) {
+            if (!m_view.m_dying) {
+                m_cachedName = m_view.accessibleName();
+            }
+            return m_cachedName;
+        }
+        return {};
     }
     void setText(QAccessible::Text, const QString&) override {}
     QRect rect() const override { return m_view.screenRect(); }
-    QAccessible::Role role() const override { return m_view.accessibleRole(); }
+    QAccessible::Role role() const override {
+        if (!m_view.m_dying) {
+            m_cachedRole = m_view.accessibleRole();
+        }
+        return m_cachedRole;
+    }
     QAccessible::State state() const override { return {}; }
 
   private:
     ViewObject& m_view;
+    mutable QAccessible::Role m_cachedRole;
+    mutable QString m_cachedName;
 };
 
-} // namespace
-
 ViewObject::~ViewObject() {
+    m_dying = true;
     if (m_parent != nullptr) {
-        if (ViewRoot* owner = root()) {
+        if (m_accessibleId != 0 && !m_destroyedAnnounced) {
+            announce(QAccessible::ObjectDestroyed);
+        }
+        if (ViewRoot* const owner = root()) {
             owner->leftTheTree(*this);
             owner->addDamage(m_lastPaintBounds.isEmpty() ? m_geometry : m_lastPaintBounds);
         }
         std::erase(m_parent->m_children, this);
+        m_formerAccessibleParent = m_parent->accessible();
         m_parent = nullptr;
+    } else if (m_root != nullptr) {
+        if (m_accessibleId != 0 && !m_destroyedAnnounced) {
+            announce(QAccessible::ObjectDestroyed);
+        }
+        m_root->leftTheTree(*this);
+        m_root->addDamage(m_lastPaintBounds.isEmpty() ? m_geometry : m_lastPaintBounds);
+        m_formerAccessibleParent = m_root->accessible();
+        m_root = nullptr;
     }
     for (ViewObject* child : m_children) {
         child->m_parent = nullptr;
     }
     if (m_accessibleId != 0) {
         QAccessible::deleteAccessibleInterface(m_accessibleId);
+        m_accessibleId = 0;
     }
 }
 
@@ -79,14 +103,28 @@ bool ViewObject::addChild(ViewObject& child) {
             return false; // a cycle would never end at a root
         }
     }
-    if (child.m_root != nullptr) {
+    if (child.m_root != nullptr && !child.m_removing) {
         return false;
     }
     if (child.m_parent == this) {
         return true;
     }
+    const std::weak_ptr<void> alive = child.m_lifetime;
+    const std::weak_ptr<void> selfAlive = m_lifetime;
     if (child.m_parent != nullptr) {
-        child.m_parent->removeChild(child);
+        if (!child.m_removing) {
+            child.m_parent->removeChild(child);
+        } else {
+            std::erase(child.m_parent->m_children, &child);
+            child.m_parent = nullptr;
+        }
+        if (alive.expired() || selfAlive.expired() || child.m_parent != nullptr ||
+            (child.m_root != nullptr && !child.m_removing)) {
+            return false;
+        }
+    }
+    if (child.m_root != nullptr) {
+        child.m_root = nullptr;
     }
     m_children.push_back(&child);
     child.m_parent = this;
@@ -97,22 +135,34 @@ bool ViewObject::addChild(ViewObject& child) {
 }
 
 bool ViewObject::removeChild(ViewObject& child) {
-    if (child.m_parent != this) {
+    if (child.m_parent != this || child.m_removing) {
         return false;
     }
-    ViewRoot* owner = root();
-    const bool wasInTree = owner != nullptr;
+    child.m_removing = true;
+    const std::weak_ptr<void> alive = child.m_lifetime;
+    const std::weak_ptr<void> selfAlive = m_lifetime;
+
+    if (child.m_accessibleId != 0 && !child.m_destroyedAnnounced) {
+        child.announce(QAccessible::ObjectDestroyed);
+    }
+    if (alive.expired() || selfAlive.expired() || child.m_parent != this) {
+        if (!alive.expired()) {
+            child.m_removing = false;
+        }
+        return true;
+    }
+
+    child.m_removing = false;
+    ViewRoot* const owner = root();
     const QRectF damage = child.paintBounds();
 
     std::erase(m_children, &child);
+    child.m_formerAccessibleParent = accessible();
     child.m_parent = nullptr;
 
     if (owner != nullptr) {
         owner->leftTheTree(child);
         owner->addDamage(damage);
-    }
-    if (wasInTree) {
-        child.announce(QAccessible::ObjectDestroyed);
     }
     return true;
 }
@@ -130,7 +180,10 @@ QAccessibleInterface* ViewObject::accessibleParent() const {
     if (m_parent != nullptr) {
         return m_parent->accessible();
     }
-    return m_root != nullptr ? m_root->accessible() : nullptr;
+    if (m_root != nullptr) {
+        return m_root->accessible();
+    }
+    return m_formerAccessibleParent;
 }
 
 QRect ViewObject::screenRect() const {
@@ -140,7 +193,8 @@ QRect ViewObject::screenRect() const {
 }
 
 void ViewObject::update(QRectF damage) {
-    if (ViewRoot* owner = root()) {
+    m_lastPaintBounds = paintBounds();
+    if (ViewRoot* const owner = root()) {
         owner->addDamage(damage);
     }
 }
@@ -154,11 +208,18 @@ ViewRoot* ViewObject::root() const {
 }
 
 void ViewObject::announce(QAccessible::Event event) {
-    // Interfaces are made on demand, so nothing is made while no assistive technology listens.
-    if (!QAccessible::isActive()) {
+    if (event == QAccessible::ObjectDestroyed) {
+        m_destroyedAnnounced = true;
+        if (m_accessibleId == 0) {
+            return;
+        }
+        if (QAccessibleInterface* node = QAccessible::accessibleInterface(m_accessibleId)) {
+            QAccessibleEvent change(node, event);
+            QAccessible::updateAccessibility(&change);
+        }
         return;
     }
-    if (event != QAccessible::ObjectDestroyed && root() == nullptr) {
+    if (root() == nullptr) {
         return;
     }
     if (QAccessibleInterface* node = accessible()) {
