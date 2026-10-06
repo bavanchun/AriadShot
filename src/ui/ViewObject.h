@@ -104,6 +104,7 @@ class ViewObject {
     // Lets whoever points at a view without owning it (the root's owners of pointer, focus and input method, and the
     // hovered view) see that it is gone: they hold a weak reference and never call a view whose token has expired.
     std::shared_ptr<void> m_lifetime = std::make_shared<char>();
+    QRectF m_lastPaintBounds;
 };
 
 } // namespace ariadshot::ui

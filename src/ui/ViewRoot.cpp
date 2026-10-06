@@ -71,12 +71,13 @@ void ViewRoot::resize(QSize size, qreal scale) {
 }
 
 ViewObject& ViewRoot::addView(std::unique_ptr<ViewObject> view) {
-    ViewObject& added = *m_views.emplace_back(std::move(view));
-    if (added.m_parent != nullptr) {
-        added.m_parent->removeChild(added);
+    if (view->m_parent != nullptr) {
+        view->m_parent->removeChild(*view);
     }
+    ViewObject& added = *m_views.emplace_back(std::move(view));
     added.m_root = this;
-    addDamage(added.paintBounds());
+    added.m_lastPaintBounds = added.paintBounds();
+    addDamage(added.m_lastPaintBounds);
     added.announce(QAccessible::ObjectCreated);
     return added;
 }
@@ -87,7 +88,6 @@ std::unique_ptr<ViewObject> ViewRoot::removeView(ViewObject& view) {
     if (held == m_views.end()) {
         return nullptr;
     }
-    (*held)->announce(QAccessible::ObjectDestroyed); // while it is still in the tree: bridges ask for its place
     std::unique_ptr<ViewObject> removed = std::move(*held);
     m_views.erase(held);
     removed->m_root = nullptr;
@@ -103,6 +103,7 @@ std::unique_ptr<ViewObject> ViewRoot::removeView(ViewObject& view) {
     if (m_hovered.get() != nullptr) {
         updateHover(true);
     }
+    removed->announce(QAccessible::ObjectDestroyed);
     return removed;
 }
 

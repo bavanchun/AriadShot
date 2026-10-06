@@ -49,7 +49,12 @@ class ViewObjectAccessible final : public QAccessibleInterface {
 
 ViewObject::~ViewObject() {
     if (m_parent != nullptr) {
+        if (ViewRoot* owner = root()) {
+            owner->leftTheTree(*this);
+            owner->addDamage(m_lastPaintBounds.isEmpty() ? m_geometry : m_lastPaintBounds);
+        }
         std::erase(m_parent->m_children, this);
+        m_parent = nullptr;
     }
     for (ViewObject* child : m_children) {
         child->m_parent = nullptr;
@@ -62,7 +67,8 @@ ViewObject::~ViewObject() {
 void ViewObject::setGeometry(QRectF geometry) {
     update(paintBounds());
     m_geometry = geometry;
-    update(paintBounds());
+    m_lastPaintBounds = paintBounds();
+    update(m_lastPaintBounds);
 }
 
 ViewObject* ViewObject::hitTest(QPointF point) { return geometry().contains(point) ? this : nullptr; }
@@ -84,7 +90,8 @@ bool ViewObject::addChild(ViewObject& child) {
     }
     m_children.push_back(&child);
     child.m_parent = this;
-    child.update(child.paintBounds());
+    child.m_lastPaintBounds = child.paintBounds();
+    child.update(child.m_lastPaintBounds);
     child.announce(QAccessible::ObjectCreated);
     return true;
 }
@@ -93,13 +100,20 @@ bool ViewObject::removeChild(ViewObject& child) {
     if (child.m_parent != this) {
         return false;
     }
-    if (ViewRoot* owner = root()) {
-        owner->leftTheTree(child);
-    }
-    child.announce(QAccessible::ObjectDestroyed); // while it is still in the tree: bridges ask for its place
-    child.update(child.paintBounds());
+    ViewRoot* owner = root();
+    const bool wasInTree = owner != nullptr;
+    const QRectF damage = child.paintBounds();
+
     std::erase(m_children, &child);
     child.m_parent = nullptr;
+
+    if (owner != nullptr) {
+        owner->leftTheTree(child);
+        owner->addDamage(damage);
+    }
+    if (wasInTree) {
+        child.announce(QAccessible::ObjectDestroyed);
+    }
     return true;
 }
 
@@ -141,7 +155,10 @@ ViewRoot* ViewObject::root() const {
 
 void ViewObject::announce(QAccessible::Event event) {
     // Interfaces are made on demand, so nothing is made while no assistive technology listens.
-    if (!QAccessible::isActive() || root() == nullptr) {
+    if (!QAccessible::isActive()) {
+        return;
+    }
+    if (event != QAccessible::ObjectDestroyed && root() == nullptr) {
         return;
     }
     if (QAccessibleInterface* node = accessible()) {
