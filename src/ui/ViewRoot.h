@@ -5,12 +5,15 @@
 
 #include "platform/SurfaceContent.h"
 
+#include <QAccessible>
 #include <QImage>
+#include <QPoint>
 #include <QPointF>
 #include <QRect>
 #include <QRegion>
 #include <QSize>
 
+#include <functional>
 #include <memory>
 #include <optional>
 #include <vector>
@@ -54,16 +57,21 @@ class ViewRoot : public platform::SurfaceContent {
     // SurfaceContent. Pointer, wheel and tablet events go to the view object under the pointer, except that a press
     // makes the view object it landed on the owner of the pointer until every button is released: its moves and its
     // release go to it wherever the pointer is (a move with no button held ends a drag whose release was lost). Key
-    // and focus events go to the focus owner; input method events to the input method owner. QEvent::Enter must be a
-    // QEnterEvent.
+    // and focus events go to the focus owner; input method events and queries to the input method owner, and a query
+    // with no owner answers that input is disabled. QEvent::Enter must be a QEnterEvent. The accessible interface is a
+    // container of the views' interfaces, back to front.
     [[nodiscard]] std::vector<const QImage*> presentationLayers() const override;
     QRegion takeDamage() override;
     void dispatch(const QEvent& event) override;
+    void inputMethodQuery(QInputMethodQueryEvent& query) override;
     [[nodiscard]] std::optional<Qt::CursorShape> cursor() const override { return cursorAt(m_pointer); }
     [[nodiscard]] platform::KeyboardInteractivity keyboard() const override { return m_keyboard; }
+    [[nodiscard]] QAccessibleInterface* accessible() override;
+    void attachAccessible(QAccessibleInterface* parent, std::function<QPoint(QPoint)> surfaceToScreen) override;
 
   private:
     friend class ViewObject;
+    class Accessible;
 
     // What a point hits: the view object this root holds and what its hitTest chose, the holder or a descendant.
     struct Hit {
@@ -77,6 +85,7 @@ class ViewRoot : public platform::SurfaceContent {
     void dispatchPointer(const QSinglePointEvent& event);
     void updateHover(bool pointerInside);
     void paintChrome(const QRegion& damage);
+    [[nodiscard]] QRect toScreen(QRect area) const;
 
     std::vector<std::unique_ptr<ViewObject>> m_views; // back to front
     std::vector<const QImage*> m_canonicalLayers;
@@ -89,6 +98,9 @@ class ViewRoot : public platform::SurfaceContent {
     ViewObject* m_focusOwner = nullptr;
     ViewObject* m_inputMethodOwner = nullptr;
     platform::KeyboardInteractivity m_keyboard = platform::KeyboardInteractivity::None;
+    QAccessibleInterface* m_accessibleParent = nullptr;
+    std::function<QPoint(QPoint)> m_surfaceToScreen;
+    QAccessible::Id m_accessibleId = 0;
 };
 
 } // namespace ariadshot::ui

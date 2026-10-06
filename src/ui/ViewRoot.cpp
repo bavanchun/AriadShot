@@ -6,8 +6,10 @@
 #include "render/CanonicalImage.h"
 #include "ui/ViewObject.h"
 
+#include <QAccessibleInterface>
 #include <QEnterEvent>
 #include <QEvent>
+#include <QInputMethodQueryEvent>
 #include <QPainter>
 #include <QtMath>
 
@@ -17,7 +19,47 @@
 
 namespace ariadshot::ui {
 
-ViewRoot::~ViewRoot() = default;
+// The root's interface in the accessible tree: a container of its views' interfaces under the host's interface.
+class ViewRoot::Accessible final : public QAccessibleInterface {
+  public:
+    explicit Accessible(ViewRoot& root) : m_root(root) {}
+
+    bool isValid() const override { return true; }
+    QObject* object() const override { return nullptr; }
+    QAccessibleInterface* childAt(int x, int y) const override {
+        for (const auto& view : std::views::reverse(m_root.m_views)) {
+            if (view->screenRect().contains(x, y)) {
+                return view->accessible();
+            }
+        }
+        return nullptr;
+    }
+    QAccessibleInterface* parent() const override { return m_root.m_accessibleParent; }
+    QAccessibleInterface* child(int index) const override {
+        const bool held = index >= 0 && std::cmp_less(index, m_root.m_views.size());
+        return held ? m_root.m_views[static_cast<std::size_t>(index)]->accessible() : nullptr;
+    }
+    int childCount() const override { return static_cast<int>(m_root.m_views.size()); }
+    int indexOfChild(const QAccessibleInterface* child) const override {
+        const auto held =
+            std::ranges::find_if(m_root.m_views, [child](const auto& view) { return view->accessible() == child; });
+        return held != m_root.m_views.end() ? static_cast<int>(held - m_root.m_views.begin()) : -1;
+    }
+    QString text(QAccessible::Text) const override { return {}; }
+    void setText(QAccessible::Text, const QString&) override {}
+    QRect rect() const override { return m_root.toScreen(m_root.m_surface); }
+    QAccessible::Role role() const override { return QAccessible::Pane; }
+    QAccessible::State state() const override { return {}; }
+
+  private:
+    ViewRoot& m_root;
+};
+
+ViewRoot::~ViewRoot() {
+    if (m_accessibleId != 0) {
+        QAccessible::deleteAccessibleInterface(m_accessibleId);
+    }
+}
 
 // The buffer rounds up: rounding to nearest can leave the last row or column of the surface without pixels.
 void ViewRoot::resize(QSize size, qreal scale) {
@@ -122,6 +164,27 @@ void ViewRoot::dispatch(const QEvent& event) {
     }
 }
 
+void ViewRoot::inputMethodQuery(QInputMethodQueryEvent& query) {
+    if (m_inputMethodOwner != nullptr) {
+        m_inputMethodOwner->inputMethodQuery(query);
+    } else {
+        query.setValue(Qt::ImEnabled, false);
+    }
+}
+
+QAccessibleInterface* ViewRoot::accessible() {
+    if (m_accessibleId == 0) {
+        // The registry owns the interface from here on; ~ViewRoot gives it back by id.
+        m_accessibleId = QAccessible::registerAccessibleInterface(std::make_unique<Accessible>(*this).release());
+    }
+    return QAccessible::accessibleInterface(m_accessibleId);
+}
+
+void ViewRoot::attachAccessible(QAccessibleInterface* parent, std::function<QPoint(QPoint)> surfaceToScreen) {
+    m_accessibleParent = parent;
+    m_surfaceToScreen = std::move(surfaceToScreen);
+}
+
 // Damage is whole points, rounded outwards so that it never covers less than the change.
 void ViewRoot::addDamage(QRectF area) { m_damage += area.toAlignedRect() & m_surface; }
 
@@ -193,6 +256,10 @@ void ViewRoot::paintChrome(const QRegion& damage) {
         view->paint(painter);
         painter.restore();
     }
+}
+
+QRect ViewRoot::toScreen(QRect area) const {
+    return m_surfaceToScreen ? QRect(m_surfaceToScreen(area.topLeft()), area.size()) : area;
 }
 
 } // namespace ariadshot::ui

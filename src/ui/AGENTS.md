@@ -17,9 +17,11 @@ SPDX-License-Identifier: GPL-3.0-only
   and reach the root through `setCanonicalLayers`, so no view object paints into both and surfaces never re-render
   annotations.
 - **Accessible by construction.** Every chrome view object gives `accessibleName()` (through `tr()`) and
-  `accessibleRole()`; a view with more to expose, such as text or a value, overrides `accessible()`.
-- **Input state follows the root.** A press makes its view the pointer owner until every button is released, wherever
-  the pointer goes; the hovered view is separate, and a callback may remove it from the tree at any time.
+  `accessibleRole()`; a view with more to expose, such as text or a value, overrides `accessible()` and reports
+  `accessibleParent()` and `screenRect()`. Qt wants screen coordinates, so a view never reports surface points.
+- **Input state follows the root.** A press makes its view the pointer owner until every button is released, and a
+  view that answers the input method's queries is the input method owner (`inputMethodQuery()`); neither is the
+  hovered view, which a callback may remove from the tree at any time.
 - **One coordinate space.** Geometry, event positions, damage and painting are in the surface's points, top-left
   origin, y down. Damage is rounded outwards to whole points.
 - **Tests** run offscreen in `tests/unit/ui/` and assert behaviour. Appearance values are ported from MacShot with

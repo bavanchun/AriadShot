@@ -5,6 +5,7 @@
 
 #include <QAccessible>
 #include <QPointF>
+#include <QRect>
 #include <QRectF>
 #include <QString>
 #include <QtGlobal>
@@ -12,6 +13,7 @@
 #include <optional>
 
 class QEvent;
+class QInputMethodQueryEvent;
 class QPainter;
 
 namespace ariadshot::ui {
@@ -43,16 +45,24 @@ class ViewObject {
     // and its release come to it wherever the pointer is. Key and focus events reach the root's focus owner, input
     // method events its input method owner. Positions are in surface points.
     virtual void handleEvent(const QEvent& /*event*/) {}
+    // Answers the input method's queries while this view is the root's input method owner: sets the value of each of
+    // query.queries() with setValue(). Rectangles are in surface points. The default answers nothing.
+    virtual void inputMethodQuery(QInputMethodQueryEvent& /*query*/) {}
 
     // The cursor over the point; nullopt hides it because the canvas draws its own.
     [[nodiscard]] virtual std::optional<Qt::CursorShape> cursorAt(QPointF /*point*/) const { return Qt::ArrowCursor; }
     [[nodiscard]] virtual QString toolTip() const { return {}; }
 
     // Every view object is accessible: it names itself and gives its role. accessible() wraps the two in a Qt
-    // interface that the QAccessible registry owns; a view with more to say (text, value) overrides it.
+    // interface that the QAccessible registry owns; a view with more to say (text, value) overrides it and reports
+    // accessibleParent() and screenRect() like the default does.
     [[nodiscard]] virtual QString accessibleName() const = 0;
     [[nodiscard]] virtual QAccessible::Role accessibleRole() const = 0;
     virtual QAccessibleInterface* accessible();
+    // The parent in the accessible tree: the interface of the root that holds this view, nullptr when none does.
+    [[nodiscard]] QAccessibleInterface* accessibleParent() const;
+    // geometry() in screen coordinates, mapped by the host the root is attached to; the surface's own when it is not.
+    [[nodiscard]] QRect screenRect() const;
 
     // Marks an area as changed; the held-by root hands it to the host with the next takeDamage().
     void update(QRectF damage);

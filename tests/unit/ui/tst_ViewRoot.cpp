@@ -6,10 +6,12 @@
 #include "ui/ViewRoot.h"
 
 #include <QAccessible>
+#include <QAccessibleInterface>
 #include <QEnterEvent>
 #include <QFocusEvent>
 #include <QImage>
 #include <QInputMethodEvent>
+#include <QInputMethodQueryEvent>
 #include <QKeyEvent>
 #include <QMouseEvent>
 #include <QPainter>
@@ -57,6 +59,12 @@ class TestView final : public ViewObject {
             positions.push_back(static_cast<const QSinglePointEvent&>(event).position());
         }
     }
+    void inputMethodQuery(QInputMethodQueryEvent& query) override {
+        queried = query.queries();
+        query.setValue(Qt::ImEnabled, true);
+        query.setValue(Qt::ImSurroundingText, surroundingText);
+        query.setValue(Qt::ImCursorPosition, cursorPosition);
+    }
     std::optional<Qt::CursorShape> cursorAt(QPointF) const override { return cursor; }
     QString accessibleName() const override { return name; }
     QAccessible::Role accessibleRole() const override { return role; }
@@ -66,11 +74,14 @@ class TestView final : public ViewObject {
     std::optional<Qt::CursorShape> cursor = Qt::CrossCursor;
     QColor color = Qt::red;
     QRectF paintArea; // where paint() draws; the geometry when null
+    QString surroundingText;
+    int cursorPosition = 0;
     bool passThrough = false;
     int paintCount = 0;
     std::vector<bool> hovers;
     Events events;
     std::vector<QPointF> positions;
+    Qt::InputMethodQueries queried;
     std::function<void(bool)> onHover;
 };
 
@@ -102,6 +113,30 @@ void mouse(ViewRoot& root, QEvent::Type type, QPointF position) {
 void drag(ViewRoot& root, QPointF position) {
     root.dispatch(QMouseEvent(QEvent::MouseMove, position, position, Qt::NoButton, Qt::LeftButton, Qt::NoModifier));
 }
+
+// The host's accessible root: its one child is the content's accessible interface, as a host window would add it.
+class HostAccessible final : public QAccessibleInterface {
+  public:
+    explicit HostAccessible(SurfaceContent& surfaceContent) : m_content(surfaceContent) {}
+
+    bool isValid() const override { return true; }
+    QObject* object() const override { return nullptr; }
+    QAccessibleInterface* childAt(int, int) const override { return nullptr; }
+    QAccessibleInterface* parent() const override { return nullptr; }
+    QAccessibleInterface* child(int index) const override { return index == 0 ? m_content.accessible() : nullptr; }
+    int childCount() const override { return 1; }
+    int indexOfChild(const QAccessibleInterface* candidate) const override {
+        return candidate == m_content.accessible() ? 0 : -1;
+    }
+    QString text(QAccessible::Text) const override { return {}; }
+    void setText(QAccessible::Text, const QString&) override {}
+    QRect rect() const override { return {}; }
+    QAccessible::Role role() const override { return QAccessible::Window; }
+    QAccessible::State state() const override { return {}; }
+
+  private:
+    SurfaceContent& m_content;
+};
 
 // The host side of the platform interfaces: it shows what the content reports.
 class FakeSurface final : public HostedSurface {
@@ -156,6 +191,8 @@ class ViewRootTest : public QObject {
     void pointerEventSkipsAViewRemovedByAHoverCallback();
     void keyAndFocusEventsGoToTheFocusOwner();
     void inputMethodEventsGoToTheInputMethodOwner();
+    void inputMethodQueriesAreAnsweredByTheInputMethodOwner();
+    void inputMethodIsDisabledWithoutAnOwner();
     void removedViewIsForgotten();
     void updateAccumulatesDamageUntilTaken();
     void layersAreCanonicalLayersThenChrome();
@@ -165,6 +202,7 @@ class ViewRootTest : public QObject {
     void cursorFollowsTheViewUnderThePointer();
     void keyboardModeIsReported();
     void viewObjectExposesAccessibleNameAndRole();
+    void hostReachesTheAccessibleViewsAndLocatesThemOnTheScreen();
     void hostPresentsContentThroughThePlatformInterfaces();
 };
 
@@ -370,6 +408,38 @@ void ViewRootTest::inputMethodEventsGoToTheInputMethodOwner() {
     QCOMPARE(canvas.events, Events{QEvent::KeyPress});
 }
 
+// Qt asks the focus object for surrounding text, the cursor position and so on, and the receiver answers with
+// setValue() on the event (https://doc.qt.io/qt-6.8/qinputmethodqueryevent.html).
+void ViewRootTest::inputMethodQueriesAreAnsweredByTheInputMethodOwner() {
+    ViewRoot root;
+    TestView& canvas = addView(root, {0, 0, 100, 100});
+    TestView& text = addView(root, {10, 10, 30, 10});
+    text.surroundingText = u"hello"_s;
+    text.cursorPosition = 3;
+    root.setFocusOwner(&canvas);
+    root.setInputMethodOwner(&text);
+    const Qt::InputMethodQueries asked = Qt::ImEnabled | Qt::ImSurroundingText | Qt::ImCursorPosition;
+    QInputMethodQueryEvent query(asked);
+
+    static_cast<SurfaceContent&>(root).inputMethodQuery(query);
+
+    QCOMPARE(text.queried, asked);
+    QCOMPARE(query.value(Qt::ImEnabled), QVariant(true));
+    QCOMPARE(query.value(Qt::ImSurroundingText), QVariant(u"hello"_s));
+    QCOMPARE(query.value(Qt::ImCursorPosition), QVariant(3));
+    QVERIFY(canvas.events.empty());
+    QVERIFY(canvas.queried == Qt::InputMethodQueries());
+}
+
+void ViewRootTest::inputMethodIsDisabledWithoutAnOwner() {
+    ViewRoot root;
+    QInputMethodQueryEvent query(Qt::ImEnabled);
+
+    root.inputMethodQuery(query);
+
+    QCOMPARE(query.value(Qt::ImEnabled), QVariant(false));
+}
+
 void ViewRootTest::removedViewIsForgotten() {
     ViewRoot root;
     root.resize({100, 100}, 1.0);
@@ -526,9 +596,46 @@ void ViewRootTest::viewObjectExposesAccessibleNameAndRole() {
     QCOMPARE(accessible->text(QAccessible::Name), u"Save"_s);
     QCOMPARE(accessible->role(), QAccessible::Button);
     QCOMPARE(accessible->rect(), QRect(0, 0, 10, 10));
+    QVERIFY(accessible->parent() == nullptr);
     view.name = u"Copy"_s;
     QCOMPARE(accessible->text(QAccessible::Name), u"Copy"_s);
     QCOMPARE(view.accessible(), accessible);
+}
+
+// Assistive technology walks the tree from the host's window: host root, the content's interface, then its views. The
+// host also supplies where the surface is on the screen, and a surface can move, so the mapping is asked at each call
+// (https://doc.qt.io/qt-6.8/qaccessibleinterface.html: rect() is in screen coordinates).
+void ViewRootTest::hostReachesTheAccessibleViewsAndLocatesThemOnTheScreen() {
+    ViewRoot root;
+    root.resize({200, 100}, 1.0);
+    root.addView(std::make_unique<TestView>(QRectF(10, 10, 20, 20), u"Save"_s));
+    root.addView(std::make_unique<TestView>(QRectF(50, 10, 20, 20), u"Copy"_s));
+    HostAccessible host(root);
+    QPoint origin(1920, 100);
+    static_cast<SurfaceContent&>(root).attachAccessible(&host, [&origin](QPoint point) { return point + origin; });
+
+    QAccessibleInterface* content = host.child(0);
+    if (content == nullptr) {
+        QFAIL("the content has no accessible interface");
+    }
+    QVERIFY(content->parent() == &host);
+    QCOMPARE(content->rect(), QRect(1920, 100, 200, 100));
+    QCOMPARE(content->childCount(), 2);
+    QAccessibleInterface* save = content->child(0);
+    QAccessibleInterface* copy = content->child(1);
+    if (save == nullptr || copy == nullptr) {
+        QFAIL("the content does not list its views");
+    }
+    QCOMPARE(save->text(QAccessible::Name), u"Save"_s);
+    QCOMPARE(copy->text(QAccessible::Name), u"Copy"_s);
+    QVERIFY(save->parent() == content);
+    QCOMPARE(content->indexOfChild(copy), 1);
+    QCOMPARE(save->rect(), QRect(1930, 110, 20, 20));
+    QVERIFY(content->childAt(1935, 115) == save);
+    QVERIFY(content->childAt(1925, 105) == nullptr);
+
+    origin = {0, 50};
+    QCOMPARE(copy->rect(), QRect(50, 60, 20, 20));
 }
 
 void ViewRootTest::hostPresentsContentThroughThePlatformInterfaces() {
