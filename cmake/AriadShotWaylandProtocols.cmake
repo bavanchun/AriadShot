@@ -4,11 +4,12 @@
 include_guard(GLOBAL)
 
 function(ariadshot_generate_wayland_protocols)
-    cmake_parse_arguments(PARSE_ARGV 0 arg "" "TARGET;OUTPUT_DIR" "XMLS")
-    if(NOT arg_TARGET OR NOT arg_XMLS)
-        message(FATAL_ERROR "ariadshot_generate_wayland_protocols(TARGET <target> XMLS <xml>...)")
+    cmake_parse_arguments(PARSE_ARGV 0 arg "" "TARGET;OUTPUT_DIR" "XMLS;CODE_ONLY_XMLS")
+    if(NOT arg_TARGET OR (NOT arg_XMLS AND NOT arg_CODE_ONLY_XMLS))
+        message(FATAL_ERROR "ariadshot_generate_wayland_protocols(TARGET <target> [XMLS <xml>...] [CODE_ONLY_XMLS <xml>...])")
     endif()
 
+    enable_language(C)
     find_program(WAYLAND_SCANNER wayland-scanner REQUIRED)
 
     if(NOT arg_OUTPUT_DIR)
@@ -38,11 +39,21 @@ function(ariadshot_generate_wayland_protocols)
             COMMENT "Generating Wayland private code ${xml_name}-protocol.c"
             VERBATIM)
 
-        set_source_files_properties("${source}" PROPERTIES
-            LANGUAGE CXX
-            COMPILE_OPTIONS "-w")
-
         list(APPEND generated_headers "${header}")
+        list(APPEND generated_sources "${source}")
+    endforeach()
+
+    foreach(xml_file IN LISTS arg_CODE_ONLY_XMLS)
+        get_filename_component(xml_name "${xml_file}" NAME_WLE)
+        set(source "${arg_OUTPUT_DIR}/${xml_name}-protocol.c")
+
+        add_custom_command(
+            OUTPUT "${source}"
+            COMMAND "${WAYLAND_SCANNER}" private-code "${xml_file}" "${source}"
+            DEPENDS "${xml_file}"
+            COMMENT "Generating Wayland private code ${xml_name}-protocol.c"
+            VERBATIM)
+
         list(APPEND generated_sources "${source}")
     endforeach()
 

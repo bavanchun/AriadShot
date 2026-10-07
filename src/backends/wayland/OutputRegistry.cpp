@@ -12,6 +12,7 @@
 #include <unordered_map>
 #include <utility>
 #include <wayland-client-protocol.h>
+#include <wayland-client.h>
 
 namespace ariadshot::backends::wayland {
 
@@ -40,6 +41,17 @@ struct OutputTracker {
     struct wl_output* output = nullptr;
     WaylandOutputInfo pending;
 };
+
+void destroyOutputProxy(struct wl_output* output) {
+    if (output == nullptr) {
+        return;
+    }
+    if (wl_output_get_version(output) >= 3) {
+        wl_output_release(output);
+    } else {
+        wl_output_destroy(output);
+    }
+}
 
 } // namespace
 
@@ -176,7 +188,6 @@ void OutputRegistry::bindOutput(struct wl_registry* registry, uint32_t id, uint3
     tracker->id = id;
     tracker->output = output;
     tracker->pending.id = id;
-    tracker->pending.output = output;
 
     auto* trackerPtr = tracker.get();
     m_impl->trackersById[id] = std::move(tracker);
@@ -187,10 +198,8 @@ void OutputRegistry::bindOutput(struct wl_registry* registry, uint32_t id, uint3
 void OutputRegistry::removeOutput(uint32_t id) {
     auto trackerIt = m_impl->trackersById.find(id);
     if (trackerIt != m_impl->trackersById.end()) {
-        if (trackerIt->second->output != nullptr) {
-            wl_output_destroy(trackerIt->second->output);
-            trackerIt->second->output = nullptr;
-        }
+        destroyOutputProxy(trackerIt->second->output);
+        trackerIt->second->output = nullptr;
         m_impl->trackersById.erase(trackerIt);
     }
 
@@ -212,7 +221,7 @@ void OutputRegistry::removeOutput(uint32_t id) {
 void OutputRegistry::cleanup() {
     for (auto& [id, tracker] : m_impl->trackersById) {
         if (tracker && tracker->output != nullptr) {
-            wl_output_destroy(tracker->output);
+            destroyOutputProxy(tracker->output);
             tracker->output = nullptr;
         }
     }
@@ -222,6 +231,14 @@ void OutputRegistry::cleanup() {
         std::scoped_lock lock(m_impl->mutex);
         m_impl->outputsById.clear();
     }
+}
+
+struct wl_output* OutputRegistry::outputProxy(uint32_t id) const {
+    auto it = m_impl->trackersById.find(id);
+    if (it != m_impl->trackersById.end() && it->second != nullptr) {
+        return it->second->output;
+    }
+    return nullptr;
 }
 
 QList<WaylandOutputInfo> OutputRegistry::outputs() const {

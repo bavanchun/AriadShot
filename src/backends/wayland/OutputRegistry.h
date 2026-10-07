@@ -13,8 +13,10 @@
 
 #include <cstdint>
 #include <memory>
-#include <platform/OutputId.h>
-#include <wayland-client.h>
+
+struct wl_output;
+struct wl_registry;
+struct wl_event_queue;
 
 namespace ariadshot::backends::wayland {
 
@@ -22,7 +24,6 @@ namespace ariadshot::backends::wayland {
 // Tracks metadata and geometry for one Wayland output (wl_output v4).
 struct WaylandOutputInfo {
     uint32_t id = 0;
-    struct wl_output* output = nullptr;
     QString name;
     QString description;
     QPoint geometryPosition{0, 0};
@@ -31,13 +32,14 @@ struct WaylandOutputInfo {
     QString make;
     QString model;
     int32_t transform = 0; // enum wl_output_transform
-    int32_t scale = 1;     // wl_output scale factor
+    int32_t scale = 1;     // wl_output integer scale factor
     QSize currentModeSize{0, 0};
     int32_t refreshRate = 0; // mHz
     bool done = false;
 
-    // Logical geometry: zxdg_output_manager_v1 is intentionally not in M0 protocols;
-    // position comes from wl_output.geometry (x, y), and logical size is currentModeSize / scale.
+    // Logical geometry: derived from wl_output.geometry (x, y) and currentModeSize / scale.
+    // Integer scale is used as provided by wl_output v4; fractional scale layout or compositor-side
+    // logical positioning (e.g. zxdg_output_manager_v1) is planned for a later protocol slice.
     // If transform swaps axes (90 or 270 deg rotation), width and height are transposed.
     [[nodiscard]] QSize logicalSize() const;
     [[nodiscard]] QRect logicalGeometry() const;
@@ -74,8 +76,12 @@ class OutputRegistry : public QObject {
     void removeOutput(uint32_t id);
 
     // Cleanly destroys and unbinds all tracked wl_output proxies.
-    // Thread: WaylandSession.
+    // Thread: GUI (after join) or WaylandSession.
     void cleanup();
+
+    // Look up the raw wl_output proxy for a given global ID.
+    // Thread: WaylandSession.
+    [[nodiscard]] struct wl_output* outputProxy(uint32_t id) const;
 
     // Thread-safe access to tracked outputs.
     // Thread: any.

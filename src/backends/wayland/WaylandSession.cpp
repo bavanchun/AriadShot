@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include <QDebug>
+#include <QMetaObject>
 
 #include <atomic>
 #include <backends/wayland/WaylandSession.h>
@@ -36,13 +37,36 @@ struct WaylandSession::Impl {
 
         while (!stopping.load(std::memory_order_acquire)) {
             while (wl_display_prepare_read_queue(display, queue) != 0) {
-                wl_display_dispatch_queue_pending(display, queue);
+                if (stopping.load(std::memory_order_acquire)) {
+                    break;
+                }
+                if (wl_display_dispatch_queue_pending(display, queue) < 0 || wl_display_get_error(display) != 0) {
+                    break;
+                }
             }
-            wl_display_flush(display);
+
+            if (stopping.load(std::memory_order_acquire) || wl_display_get_error(display) != 0) {
+                break;
+            }
+
+            auto displayEvents = static_cast<unsigned int>(POLLIN);
+            while (wl_display_flush(display) < 0) {
+                if (errno == EAGAIN) {
+                    displayEvents |= static_cast<unsigned int>(POLLOUT);
+                    break;
+                }
+                if (errno != EINTR) {
+                    break;
+                }
+            }
+            if (wl_display_get_error(display) != 0) {
+                wl_display_cancel_read(display);
+                break;
+            }
 
             struct pollfd pfd[2];
             pfd[0].fd = wl_display_get_fd(display);
-            pfd[0].events = POLLIN;
+            pfd[0].events = static_cast<short>(displayEvents);
             pfd[0].revents = 0;
             pfd[1].fd = wakePipe[0];
             pfd[1].events = POLLIN;
@@ -57,8 +81,8 @@ struct WaylandSession::Impl {
                 break;
             }
 
-            const auto wakeRevents = static_cast<unsigned short>(pfd[1].revents);
-            if ((wakeRevents & static_cast<unsigned short>(POLLIN)) != 0U) {
+            const auto wakeRevents = static_cast<unsigned int>(pfd[1].revents);
+            if ((wakeRevents & static_cast<unsigned int>(POLLIN)) != 0U) {
                 wl_display_cancel_read(display);
                 char buf[64];
                 while (read(wakePipe[0], buf, sizeof(buf)) > 0) {
@@ -66,8 +90,9 @@ struct WaylandSession::Impl {
                 break;
             }
 
-            const auto displayRevents = static_cast<unsigned short>(pfd[0].revents);
-            constexpr auto kErrorOrInputMask = static_cast<unsigned short>(POLLIN | POLLERR | POLLHUP);
+            const auto displayRevents = static_cast<unsigned int>(pfd[0].revents);
+            constexpr auto kErrorOrInputMask = static_cast<unsigned int>(POLLIN) | static_cast<unsigned int>(POLLERR) |
+                                               static_cast<unsigned int>(POLLHUP);
             if ((displayRevents & kErrorOrInputMask) != 0U) {
                 if (wl_display_read_events(display) < 0) {
                     break;
@@ -76,10 +101,17 @@ struct WaylandSession::Impl {
                 wl_display_cancel_read(display);
             }
 
-            wl_display_dispatch_queue_pending(display, queue);
+            if (wl_display_dispatch_queue_pending(display, queue) < 0 || wl_display_get_error(display) != 0) {
+                break;
+            }
         }
 
         isDispatching.store(false, std::memory_order_release);
+        if (!stopping.load(std::memory_order_acquire)) {
+            if (isConnected.exchange(false, std::memory_order_acq_rel)) {
+                QMetaObject::invokeMethod(q, "connectionLost", Qt::QueuedConnection);
+            }
+        }
     }
 };
 
@@ -120,7 +152,8 @@ bool WaylandSession::connectAndStart() {
         return true;
     }
 
-    const char* displayArg = m_impl->displayName.isEmpty() ? nullptr : m_impl->displayName.toUtf8().constData();
+    const QByteArray nameBytes = m_impl->displayName.toUtf8();
+    const char* displayArg = m_impl->displayName.isEmpty() ? nullptr : nameBytes.constData();
     m_impl->display = wl_display_connect(displayArg);
     if (m_impl->display == nullptr) {
         return false;
@@ -133,11 +166,7 @@ bool WaylandSession::connectAndStart() {
         return false;
     }
 
-#if defined(HAVE_PIPE2) || defined(__linux__)
     if (pipe2(m_impl->wakePipe, O_CLOEXEC | O_NONBLOCK) != 0) {
-#else
-    if (pipe(m_impl->wakePipe) != 0) {
-#endif
         wl_event_queue_destroy(m_impl->queue);
         wl_display_disconnect(m_impl->display);
         m_impl->display = nullptr;
@@ -164,7 +193,8 @@ bool WaylandSession::connectAndStart() {
     m_impl->stopping.store(false, std::memory_order_release);
     m_impl->isConnected.store(true, std::memory_order_release);
 
-    m_impl->thread = std::thread(&Impl::dispatchLoop, m_impl.get());
+    m_impl->thread = std::thread([this]() { m_impl->dispatchLoop(); });
+
     while (!m_impl->isDispatching.load(std::memory_order_acquire)) {
         std::this_thread::yield();
     }
@@ -175,7 +205,8 @@ bool WaylandSession::connectAndStart() {
 
 void WaylandSession::disconnectAndStop() {
     // Thread: GUI
-    if (!m_impl->isConnected.load(std::memory_order_acquire)) {
+    const bool wasConnected = m_impl->isConnected.exchange(false, std::memory_order_acq_rel);
+    if (!wasConnected && !m_impl->thread.joinable() && m_impl->display == nullptr) {
         return;
     }
 
@@ -216,8 +247,9 @@ void WaylandSession::disconnectAndStop() {
         m_impl->wakePipe[1] = -1;
     }
 
-    m_impl->isConnected.store(false, std::memory_order_release);
-    Q_EMIT disconnected();
+    if (wasConnected) {
+        Q_EMIT disconnected();
+    }
 }
 
 bool WaylandSession::isConnected() const { return m_impl->isConnected.load(std::memory_order_acquire); }

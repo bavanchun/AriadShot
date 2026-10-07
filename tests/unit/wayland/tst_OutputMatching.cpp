@@ -19,6 +19,8 @@ class OutputMatchingTest : public QObject {
     void testUnmatchedScreenName();
     void testEmptyInputs();
     void testLogicalGeometryCalculation();
+    void testMatchScreensWithUnmatchedWarning();
+    void testRegistrySignals();
 };
 
 // MacShot enumerates all available displays for capture in macshot/Capture/ScreenCaptureManager.swift:401-403@b4d4f3a
@@ -162,6 +164,75 @@ void OutputMatchingTest::testLogicalGeometryCalculation() {
 
     QCOMPARE(rotated270.logicalSize(), QSize(1080, 1920));
     QCOMPARE(rotated270.logicalGeometry(), QRect(0, 1080, 1080, 1920));
+}
+
+void OutputMatchingTest::testMatchScreensWithUnmatchedWarning() {
+    OutputRegistry registry;
+
+    WaylandOutputInfo out1;
+    out1.id = 1;
+    out1.name = u"HEADLESS-1"_s;
+    out1.currentModeSize = QSize(1280, 720);
+    out1.done = true;
+
+    WaylandOutputInfo outOrphan;
+    outOrphan.id = 2;
+    outOrphan.name = u"DP-1"_s;
+    outOrphan.currentModeSize = QSize(1920, 1080);
+    outOrphan.done = true;
+
+    registry.handleOutputDone(out1.id, out1);
+    registry.handleOutputDone(outOrphan.id, outOrphan);
+
+    QTest::ignoreMessage(QtWarningMsg, "Wayland output DP-1 cannot be matched to any Qt screen; capture will skip it");
+
+    const OutputMatchResult result = registry.matchScreens({u"HEADLESS-1"_s});
+    QCOMPARE(result.matched.size(), 1);
+    QCOMPARE(result.matched[0].name, u"HEADLESS-1"_s);
+    QCOMPARE(result.unmatchedOutputs.size(), 1);
+    QCOMPARE(result.unmatchedOutputs[0].name, u"DP-1"_s);
+    QCOMPARE(result.unmatchedScreenNames.size(), 0);
+}
+
+void OutputMatchingTest::testRegistrySignals() {
+    OutputRegistry registry;
+    QSignalSpy spyAdded(&registry, &OutputRegistry::outputAdded);
+    QSignalSpy spyChanged(&registry, &OutputRegistry::outputChanged);
+    QSignalSpy spyRemoved(&registry, &OutputRegistry::outputRemoved);
+
+    WaylandOutputInfo out;
+    out.id = 42;
+    out.name = u"HDMI-A-1"_s;
+    out.currentModeSize = QSize(1920, 1080);
+    out.scale = 1;
+    out.done = true;
+
+    // First arrival emits outputAdded
+    registry.handleOutputDone(out.id, out);
+    QCOMPARE(spyAdded.count(), 1);
+    QCOMPARE(spyChanged.count(), 0);
+    QCOMPARE(spyRemoved.count(), 0);
+    QCOMPARE(registry.outputs().size(), 1);
+    QCOMPARE(registry.findByName(u"HDMI-A-1"_s).name, u"HDMI-A-1"_s);
+
+    // Update to existing output emits outputChanged
+    out.scale = 2;
+    registry.handleOutputDone(out.id, out);
+    QCOMPARE(spyAdded.count(), 1);
+    QCOMPARE(spyChanged.count(), 1);
+    QCOMPARE(spyRemoved.count(), 0);
+    QCOMPARE(registry.findByName(u"HDMI-A-1"_s).scale, 2);
+
+    // Removal emits outputRemoved
+    registry.removeOutput(out.id);
+    QCOMPARE(spyAdded.count(), 1);
+    QCOMPARE(spyChanged.count(), 1);
+    QCOMPARE(spyRemoved.count(), 1);
+    QCOMPARE(registry.outputs().size(), 0);
+
+    const QList<QVariant> removeArgs = spyRemoved.takeFirst();
+    QCOMPARE(removeArgs.at(0).toUInt(), 42U);
+    QCOMPARE(removeArgs.at(1).toString(), u"HDMI-A-1"_s);
 }
 
 QTEST_GUILESS_MAIN(OutputMatchingTest)

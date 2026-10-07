@@ -275,6 +275,11 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND TARGET ariadshot_backends_wayland)
             SOURCES unit/wayland/tst_OutputMatching.cpp
             LIBS AriadShot::backends_wayland
             LABELS unit)
+
+        ariadshot_add_test(NAME wayland.protocol-linkage
+            SOURCES unit/wayland/tst_ProtocolLinkage.cpp
+            LIBS AriadShot::backends_wayland
+            LABELS unit)
     endif()
 endif()
 

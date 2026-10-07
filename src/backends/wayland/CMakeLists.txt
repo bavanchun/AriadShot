@@ -9,12 +9,17 @@ set(_ariadshot_wayland_protocols
     "${PROJECT_SOURCE_DIR}/third_party/wayland-protocols/wayland-protocols/ext-image-copy-capture-v1.xml"
     "${PROJECT_SOURCE_DIR}/third_party/wayland-protocols/wayland-protocols/ext-image-capture-source-v1.xml"
     "${PROJECT_SOURCE_DIR}/third_party/wayland-protocols/wayland-protocols/ext-data-control-v1.xml"
+    "${PROJECT_SOURCE_DIR}/third_party/wayland-protocols/wayland-protocols/ext-foreign-toplevel-list-v1.xml"
     "${PROJECT_SOURCE_DIR}/third_party/wayland-protocols/wlr-protocols/wlr-screencopy-unstable-v1.xml"
     "${PROJECT_SOURCE_DIR}/third_party/wayland-protocols/wlr-protocols/wlr-data-control-unstable-v1.xml"
     "${PROJECT_SOURCE_DIR}/third_party/wayland-protocols/wlr-protocols/wlr-virtual-pointer-unstable-v1.xml"
     "${PROJECT_SOURCE_DIR}/third_party/wayland-protocols/wlr-protocols/wlr-layer-shell-unstable-v1.xml"
+    "${PROJECT_SOURCE_DIR}/third_party/wayland-protocols/wlr-protocols/wlr-foreign-toplevel-management-unstable-v1.xml"
     "${PROJECT_SOURCE_DIR}/third_party/wayland-protocols/hyprland-protocols/hyprland-toplevel-export-v1.xml"
     "${PROJECT_SOURCE_DIR}/third_party/wayland-protocols/hyprland-protocols/hyprland-global-shortcuts-v1.xml")
+
+set(_ariadshot_wayland_code_only_protocols
+    "${PROJECT_SOURCE_DIR}/third_party/wayland-protocols/wayland-protocols/xdg-shell.xml")
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     find_package(PkgConfig REQUIRED)
@@ -35,13 +40,13 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND WaylandClient_FOUND)
 
     ariadshot_generate_wayland_protocols(
         TARGET ariadshot_backends_wayland
-        XMLS ${_ariadshot_wayland_protocols})
+        XMLS ${_ariadshot_wayland_protocols}
+        CODE_ONLY_XMLS ${_ariadshot_wayland_code_only_protocols})
 
     target_link_libraries(ariadshot_backends_wayland
         PUBLIC
             AriadShot::platform
             Qt6::Core
-        PRIVATE
             PkgConfig::WaylandClient)
 else()
     ariadshot_add_module(

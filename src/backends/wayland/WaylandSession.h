@@ -9,7 +9,9 @@
 #include <backends/wayland/OutputRegistry.h>
 #include <memory>
 #include <thread>
-#include <wayland-client.h>
+
+struct wl_display;
+struct wl_event_queue;
 
 namespace ariadshot::backends::wayland {
 
@@ -47,9 +49,11 @@ class WaylandSession : public QObject {
     [[nodiscard]] struct wl_event_queue* queue() const;
 
   Q_SIGNALS:
-    // Thread: GUI (dispatched via Qt::QueuedConnection).
+    // Thread: GUI.
     void connected();
     void disconnected();
+    // Thread: WaylandSession (dispatched via Qt::QueuedConnection on unexpected connection loss).
+    void connectionLost();
 
   private:
     struct Impl;
