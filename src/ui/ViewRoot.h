@@ -4,6 +4,7 @@
 #pragma once
 
 #include "platform/SurfaceContent.h"
+#include "ui/ViewObject.h"
 
 #include <QAccessible>
 #include <QImage>
@@ -21,8 +22,6 @@
 class QSinglePointEvent;
 
 namespace ariadshot::ui {
-
-class ViewObject;
 
 // The content of one hosted surface or embedding window. It holds the view objects front to back, routes the host's
 // events to them, collects their damage and repaints the chrome layer over it. The canonical layers come from the
@@ -77,18 +76,7 @@ class ViewRoot : public platform::SurfaceContent {
     friend class ViewObject;
     class Accessible;
 
-    // A view object this root does not own, such as a descendant that a holder hands out through hitTest() or the focus
-    // owner. It can be destroyed while the root remembers it, so a destroyed one reads as nullptr and is never called.
-    class Ref {
-      public:
-        Ref() = default;
-        explicit Ref(ViewObject* view);
-        [[nodiscard]] ViewObject* get() const { return m_alive.expired() ? nullptr : m_view; }
-
-      private:
-        ViewObject* m_view = nullptr;
-        std::weak_ptr<void> m_alive;
-    };
+    using Ref = ViewRef;
 
     // What a point hits: the view object this root holds and what its hitTest chose, the holder or a descendant. It is
     // used at once, before anything can change the tree.

@@ -239,6 +239,16 @@ ariadshot_add_test(NAME ui.view-root
     LIBS AriadShot::ui Qt6::GuiPrivate
     LABELS unit)
 
+ariadshot_add_test(NAME ui.chrome-containers
+    SOURCES unit/ui/tst_ChromeContainers.cpp
+    LIBS AriadShot::ui
+    LABELS unit)
+
+ariadshot_add_test(NAME ui.canvas-text-control
+    SOURCES unit/ui/tst_CanvasTextControl.cpp
+    LIBS AriadShot::ui
+    LABELS unit)
+
 if(ARIADSHOT_MEDIA)
     ariadshot_add_test(NAME media.studio-compositor
         SOURCES unit/media/tst_StudioCompositor.cpp

@@ -22,6 +22,7 @@ namespace ariadshot::ui {
 
 class ViewObjectAccessible;
 class ViewRoot;
+template <typename T> class BasicViewRef;
 
 // One view of a surface: a ported MacShot view or a piece of chrome. Everything a view sees is in the surface's points:
 // its geometry, the positions of the events it receives, the damage it reports and what it paints. A view object is
@@ -54,6 +55,9 @@ class ViewObject {
     // and its release come to it wherever the pointer is. Key and focus events reach the root's focus owner, input
     // method events its input method owner. Positions are in surface points.
     virtual void handleEvent(const QEvent& /*event*/) {}
+    // Called before a pointer press is dispatched, allowing views such as popovers, menus, and the text
+    // control to dismiss or commit when an outside press occurs without swallowing the event.
+    virtual void rootPointerPressed(QPointF /*point*/) {}
     // Answers the input method's queries while this view is the root's input method owner: sets the value of each of
     // query.queries() with setValue(). Rectangles are in surface points. The default answers nothing.
     virtual void inputMethodQuery(QInputMethodQueryEvent& /*query*/) {}
@@ -75,7 +79,9 @@ class ViewObject {
 
     // Every view object is accessible: it names itself and gives its role. accessible() wraps the two in a Qt
     // interface that the QAccessible registry owns, listing the children; a view with more to say (text, value)
-    // overrides it and reports accessibleParent() and screenRect() like the default does.
+    // overrides it and reports accessibleParent() and screenRect() like the default does. An override returns an
+    // interface registered with QAccessible::registerAccessibleInterface; the registry owns it and ~ViewObject
+    // deletes it by id.
     [[nodiscard]] virtual QString accessibleName() const = 0;
     [[nodiscard]] virtual QAccessible::Role accessibleRole() const = 0;
     virtual QAccessibleInterface* accessible();
@@ -88,6 +94,12 @@ class ViewObject {
     // Marks an area as changed; the root that holds the view, or its parent, hands it to the host with the next
     // takeDamage().
     void update(QRectF damage);
+
+    [[nodiscard]] std::weak_ptr<void> lifetimeToken() const noexcept { return m_lifetime; }
+
+  protected:
+    [[nodiscard]] bool isDying() const noexcept { return m_dying; }
+    QAccessible::Id m_accessibleId = 0;
 
   private:
     friend class ViewRoot;
@@ -104,7 +116,6 @@ class ViewObject {
     ViewRoot* m_root = nullptr; // the holder of a top-level view
     ViewObject* m_parent = nullptr;
     std::vector<ViewObject*> m_children;
-    QAccessible::Id m_accessibleId = 0;
     // Lets whoever points at a view without owning it (the root's owners of pointer, focus and input method, and the
     // hovered view) see that it is gone: they hold a weak reference and never call a view whose token has expired.
     std::shared_ptr<void> m_lifetime = std::make_shared<char>();
@@ -112,5 +123,27 @@ class ViewObject {
     bool m_dying = false;
     bool m_removing = false;
 };
+
+// A non-owning reference to a view object that detects when the view has been destroyed.
+template <typename T> class BasicViewRef {
+  public:
+    BasicViewRef() = default;
+    /* implicit */ BasicViewRef(T* view)
+        : m_view(view), m_alive(view != nullptr ? view->lifetimeToken() : std::weak_ptr<void>{}) {}
+    [[nodiscard]] T* get() const { return m_alive.expired() ? nullptr : m_view; }
+    [[nodiscard]] bool isExpired() const { return m_alive.expired(); }
+    [[nodiscard]] explicit operator bool() const { return get() != nullptr; }
+    T* operator->() const { return get(); }
+    T& operator*() const { return *get(); }
+    friend bool operator==(const BasicViewRef& a, const BasicViewRef& b) { return a.get() == b.get(); }
+    friend bool operator==(const BasicViewRef& a, std::nullptr_t) { return a.get() == nullptr; }
+
+  private:
+    T* m_view = nullptr;
+    std::weak_ptr<void> m_alive;
+};
+
+using ViewRef = BasicViewRef<ViewObject>;
+using ConstViewRef = BasicViewRef<const ViewObject>;
 
 } // namespace ariadshot::ui

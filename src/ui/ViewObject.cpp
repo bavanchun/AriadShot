@@ -123,6 +123,7 @@ bool ViewObject::addChild(ViewObject& child) {
     }
     if (child.m_root != nullptr) {
         child.m_root = nullptr;
+        child.m_removing = false;
     }
     m_children.push_back(&child);
     child.m_parent = this;
@@ -141,7 +142,7 @@ bool ViewObject::removeChild(ViewObject& child) {
     const std::weak_ptr<void> selfAlive = m_lifetime;
 
     child.announce(QAccessible::ObjectDestroyed);
-    if (alive.expired() || selfAlive.expired() || child.m_parent != this) {
+    if (alive.expired() || selfAlive.expired() || child.m_parent != this || !child.m_removing) {
         if (!alive.expired()) {
             child.m_removing = false;
         }
@@ -225,8 +226,13 @@ void ViewObject::announce(QAccessible::Event event) {
         return;
     }
     if (QAccessibleInterface* const node = accessible()) {
-        QAccessibleEvent change(node, event);
-        QAccessible::updateAccessibility(&change);
+        if (m_accessibleId == 0) {
+            m_accessibleId = QAccessible::uniqueId(node);
+        }
+        if (m_accessibleId != 0) {
+            QAccessibleEvent change(node, event);
+            QAccessible::updateAccessibility(&change);
+        }
     }
 }
 

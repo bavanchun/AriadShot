@@ -41,3 +41,12 @@ AriadShot does not reuse MacShot's name, logo, DMG artwork, capture sound, embed
 | `tests/unit/render/tst_Pixelate.cpp` | `macshot/Model/Annotation.swift:1990-2015` | the same step sizes, as expected values |
 | `src/render/beautify/Shadow.cpp` | `macshot/Services/BeautifyRenderer.swift:493-591`, `:840-895` | the ambient and contact shadow table (alpha, offset and blur for a radius) and the pass orders of the rounded, window-body and snapped-window shadows |
 | `tests/unit/render/tst_Shadow.cpp` | `macshot/Services/BeautifyRenderer.swift:493-518`, `:538-591`, `:867-884` | the same table values and pass orders, as expected values |
+| `src/ui/text/CanvasTextControl.cpp` | `macshot/UI/Tools/TextEditingController.swift:264-266,295,377` | initial text control frame 200 × max(28, fs+12), 4 pt inset, and 20 pt minimum fitted width |
+| `tests/unit/ui/tst_CanvasTextControl.cpp` | `macshot/UI/Tools/TextEditingController.swift:264-266,295,377` | the same text control frame dimensions and inset, as expected values |
+| `src/ui/text/CanvasTextControl.cpp` | `macshot/UI/Toolbar/ToolOptionsRowView.swift:1784-1805` | font size clamp range 8...200 |
+| `tests/unit/ui/tst_CanvasTextControl.cpp` | `macshot/UI/Toolbar/ToolOptionsRowView.swift:1784-1805` | the same font size clamp range, as expected values |
+| `src/ui/text/CanvasTextControl.cpp` | `macshot/UI/Overlay/OverlayView.swift:10255-10262` | Enter and Shift+Enter newline insertion and Escape cancel operation |
+| `tests/unit/ui/tst_CanvasTextControl.cpp` | `macshot/UI/Overlay/OverlayView.swift:10255-10262` | the same key mappings and actions, as expected values |
+| `src/ui/chrome/Popover.cpp` | `macshot/UI/Overlay/OverlayView+Popovers.swift:39` | popover 4 pt anchor gap |
+| `tests/unit/ui/tst_ChromeContainers.cpp` | `macshot/UI/Overlay/OverlayView+Popovers.swift:39` | the same popover gap, as expected values |
+
