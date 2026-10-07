@@ -89,6 +89,10 @@ class ViewObject {
     // takeDamage().
     void update(QRectF damage);
 
+  protected:
+    void setAccessibleId(QAccessible::Id id) noexcept { m_accessibleId = id; }
+    [[nodiscard]] QAccessible::Id accessibleId() const noexcept { return m_accessibleId; }
+
   private:
     friend class ViewRoot;
     friend class ViewObjectAccessible;

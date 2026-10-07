@@ -241,6 +241,47 @@ class ObservedAccessibility {
     QAccessible::UpdateHandler m_previous;
 };
 
+// A view that overrides accessible() with its own interface.
+class CustomAccessible final : public QAccessibleInterface {
+  public:
+    explicit CustomAccessible(ViewObject& view) : m_view(view) {}
+
+    bool isValid() const override { return true; }
+    QObject* object() const override { return nullptr; }
+    QAccessibleInterface* childAt(int, int) const override { return nullptr; }
+    QAccessibleInterface* parent() const override { return m_view.accessibleParent(); }
+    QAccessibleInterface* child(int) const override { return nullptr; }
+    int childCount() const override { return 0; }
+    int indexOfChild(const QAccessibleInterface*) const override { return -1; }
+    QString text(QAccessible::Text text) const override {
+        return text == QAccessible::Name ? m_view.accessibleName() : QString{};
+    }
+    void setText(QAccessible::Text, const QString&) override {}
+    QRect rect() const override { return m_view.screenRect(); }
+    QAccessible::Role role() const override { return QAccessible::EditableText; }
+    QAccessible::State state() const override { return {}; }
+
+  private:
+    ViewObject& m_view;
+};
+
+class CustomAccessibleView final : public ViewObject {
+  public:
+    explicit CustomAccessibleView(QRectF area) { setGeometry(area); }
+    void paint(QPainter&) override {}
+    QString accessibleName() const override { return QStringLiteral("custom"); }
+    QAccessible::Role accessibleRole() const override { return QAccessible::EditableText; }
+    QAccessibleInterface* accessible() override {
+        if (m_id == 0) {
+            m_id = QAccessible::registerAccessibleInterface(std::make_unique<CustomAccessible>(*this).release());
+        }
+        return QAccessible::accessibleInterface(m_id);
+    }
+
+  private:
+    QAccessible::Id m_id = 0;
+};
+
 // The host's accessible root: its one child is the content's accessible interface, as a host window would add it.
 class HostAccessible final : public QAccessibleInterface {
   public:
@@ -360,6 +401,10 @@ class ViewRootTest : public QObject {
     void topLevelRemovalAndReparentingInsideNotificationHandlerIsSafe();
     void removingChildFromHolderWithoutRootRecordsNoEvents();
     void movingViewInsideRemovalHandlerClearsRemovingFlag();
+    void viewOverridingAccessibleIsAnnouncedWhileDestroyed();
+    void viewMovedAwayAndBackInsideRemovalHandlerEndsWithFinalAnnouncement();
+    void topLevelViewMovedIntoGroupInsideRemovalHandlerClearsRemovingFlag();
+    void removeViewDamagesLastPaintBounds();
     void hostPresentsContentThroughThePlatformInterfaces();
 };
 
@@ -1521,12 +1566,22 @@ void ViewRootTest::topLevelRemovalAndReparentingInsideNotificationHandlerIsSafe(
     QVERIFY(groupForRemoval.addChild(*movingView));
     QAccessibleInterface* movingViewNode = movingView->accessible();
     bool addViewTerminated = false;
+    bool inCallback = false;
     accessibilityCallback() = [&](QAccessibleEvent* event) {
+        if (inCallback) {
+            return;
+        }
         if (event->type() == QAccessible::ObjectDestroyed && event->accessibleInterface() == movingViewNode) {
+            inCallback = true;
             root.addView(std::move(movingView));
             addViewTerminated = true;
+            std::unique_ptr<ViewObject> retrieved = root.removeView(*movingViewPtr);
+            QVERIFY(retrieved != nullptr);
+            QCOMPARE(retrieved.get(), movingViewPtr);
+            root.addView(std::move(retrieved));
             QVERIFY(groupForRemoval.children().empty());
             QCOMPARE(movingViewPtr->accessibleParent(), root.accessible());
+            inCallback = false;
         }
     };
     (void)groupForRemoval.removeChild(*movingViewPtr);
@@ -1600,6 +1655,102 @@ void ViewRootTest::movingViewInsideRemovalHandlerClearsRemovingFlag() {
     QVERIFY(removeSucceeded);
     QVERIFY(group3.children().empty());
     QVERIFY(group4.children().empty());
+}
+
+void ViewRootTest::viewOverridingAccessibleIsAnnouncedWhileDestroyed() {
+    ViewRoot root;
+    root.resize({100, 100}, 1.0);
+    const ObservedAccessibility observed;
+
+    auto custom = std::make_unique<CustomAccessibleView>(QRectF{10, 10, 20, 20});
+    CustomAccessibleView* const customPtr = custom.get();
+    QAccessibleInterface* const customNode = customPtr->accessible();
+    QVERIFY(customNode != nullptr);
+
+    GroupView& group = addGroup(root, {0, 0, 50, 50});
+    QVERIFY(group.addChild(*custom));
+    QAccessibleInterface* const groupNode = group.accessible();
+
+    changes().clear();
+    custom.reset();
+
+    QCOMPARE(changes(), (std::vector<Change>{
+                            change(QAccessible::ObjectDestroyed, customNode, groupNode, 0),
+                        }));
+}
+
+void ViewRootTest::viewMovedAwayAndBackInsideRemovalHandlerEndsWithFinalAnnouncement() {
+    ViewRoot root;
+    root.resize({100, 100}, 1.0);
+    const ObservedAccessibility observed;
+
+    GroupView& group1 = addGroup(root, {0, 0, 50, 50});
+    GroupView& group2 = addGroup(root, {50, 0, 50, 50});
+    TestView& child = group1.addNested({10, 10, 20, 20});
+    QAccessibleInterface* const childNode = child.accessible();
+    QAccessibleInterface* const group1Node = group1.accessible();
+
+    bool handled = false;
+    accessibilityCallback() = [&](QAccessibleEvent* event) {
+        if (!handled && event->type() == QAccessible::ObjectDestroyed && event->accessibleInterface() == childNode) {
+            handled = true;
+            QVERIFY(group2.addChild(child));
+            QVERIFY(group1.addChild(child));
+        }
+    };
+    QVERIFY(group1.removeChild(child));
+    accessibilityCallback() = nullptr;
+    QVERIFY(handled);
+    QCOMPARE(group1.children(), (std::vector<ViewObject*>{&child}));
+    QCOMPARE(child.accessibleParent(), group1Node);
+
+    changes().clear();
+    QVERIFY(group1.removeChild(child));
+    QCOMPARE(changes(), (std::vector<Change>{
+                            change(QAccessible::ObjectDestroyed, childNode, group1Node, 0),
+                        }));
+}
+
+void ViewRootTest::topLevelViewMovedIntoGroupInsideRemovalHandlerClearsRemovingFlag() {
+    ViewRoot root;
+    root.resize({100, 100}, 1.0);
+    const ObservedAccessibility observed;
+
+    auto top = std::make_unique<TestView>(QRectF{0, 0, 20, 20});
+    TestView* const topPtr = top.get();
+    root.addView(std::move(top));
+    GroupView& group = addGroup(root, {50, 50, 50, 50});
+    QAccessibleInterface* const topNode = topPtr->accessible();
+
+    bool handled = false;
+    bool removeChildSucceeded = false;
+    accessibilityCallback() = [&](QAccessibleEvent* event) {
+        if (!handled && event->type() == QAccessible::ObjectDestroyed && event->accessibleInterface() == topNode) {
+            handled = true;
+            QVERIFY(group.addChild(*topPtr));
+            removeChildSucceeded = group.removeChild(*topPtr);
+        }
+    };
+    (void)root.removeView(*topPtr);
+    accessibilityCallback() = nullptr;
+    QVERIFY(handled);
+    QVERIFY(removeChildSucceeded);
+}
+
+void ViewRootTest::removeViewDamagesLastPaintBounds() {
+    ViewRoot root;
+    root.resize({100, 100}, 1.0);
+
+    auto view = std::make_unique<TestView>(QRectF{40, 40, 20, 20});
+    TestView* const viewPtr = view.get();
+    viewPtr->shadow = 10;
+    root.addView(std::move(view));
+    (void)root.takeDamage();
+
+    viewPtr->shadow = 0;
+    (void)root.removeView(*viewPtr);
+
+    QCOMPARE(root.takeDamage(), QRegion(30, 30, 40, 40));
 }
 
 void ViewRootTest::hostPresentsContentThroughThePlatformInterfaces() {

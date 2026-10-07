@@ -114,7 +114,7 @@ std::unique_ptr<ViewObject> ViewRoot::removeView(ViewObject& view) {
     m_views.erase(held);
     removed->m_removing = false;
     removed->m_root = nullptr;
-    addDamage(removed->paintBounds());
+    addDamage(removed->m_lastPaintBounds.isEmpty() ? removed->paintBounds() : removed->m_lastPaintBounds);
     leftTheTree(*removed);
     // The hovered view object may be the removed one or part of it; it learns that the pointer left before it goes.
     if (m_hovered.get() != nullptr) {
