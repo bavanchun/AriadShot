@@ -68,6 +68,7 @@ endif()
 include(AriadShotCompilerOptions)
 include(AriadShotArchitecture)
 include(AriadShotVersion)
+include(AriadShotWaylandProtocols)
 
 add_subdirectory(src)
 

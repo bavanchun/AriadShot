@@ -268,6 +268,16 @@ if(ARIADSHOT_MEDIA)
     endif()
 endif()
 
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND TARGET ariadshot_backends_wayland)
+    get_target_property(_ariadshot_wayland_mod_type ariadshot_backends_wayland TYPE)
+    if(_ariadshot_wayland_mod_type STREQUAL "STATIC_LIBRARY")
+        ariadshot_add_test(NAME wayland.output-matching
+            SOURCES unit/wayland/tst_OutputMatching.cpp
+            LIBS AriadShot::backends_wayland
+            LABELS unit)
+    endif()
+endif()
+
 # --- Tests of the build system and the repository scripts ------------------------------------------------------------
 #
 # Negative cases pass only when the checker prints its own message for the rule under test (PASS_REGULAR_EXPRESSION),

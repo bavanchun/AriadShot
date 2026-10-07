@@ -21,6 +21,7 @@ AriadShot is a faithful Linux and macOS remake of MacShot (upstream https://gith
 - `src/core/AGENTS.md`
 - `src/render/AGENTS.md`
 - `src/platform/AGENTS.md`
+- `src/backends/AGENTS.md`
 - `src/ui/AGENTS.md`
 - `src/media/AGENTS.md`
 - `tests/AGENTS.md`

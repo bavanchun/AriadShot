@@ -59,3 +59,40 @@ path = [
 precedence = "override"
 SPDX-FileCopyrightText = "2026 The AriadShot Authors"
 SPDX-License-Identifier = "GPL-3.0-only"
+
+[[annotations]]
+path = [
+    "third_party/wayland-protocols/wayland-protocols/*.xml",
+    "third_party/wayland-protocols/wayland-protocols/LICENSE",
+]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2008-2015 Collabora, Ltd., Red Hat Inc., and contributors"
+SPDX-License-Identifier = "MIT"
+
+[[annotations]]
+path = [
+    "third_party/wayland-protocols/wlr-protocols/wlr-screencopy-unstable-v1.xml",
+    "third_party/wayland-protocols/wlr-protocols/wlr-virtual-pointer-unstable-v1.xml",
+    "third_party/wayland-protocols/wlr-protocols/LICENSE",
+]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2018-2019 Simon Ser, Andri Yngvason, Josef Gajdusek"
+SPDX-License-Identifier = "MIT"
+
+[[annotations]]
+path = [
+    "third_party/wayland-protocols/wlr-protocols/wlr-data-control-unstable-v1.xml",
+    "third_party/wayland-protocols/wlr-protocols/wlr-layer-shell-unstable-v1.xml",
+]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2017-2019 Drew DeVault, Simon Ser, Ivan Molodetskikh"
+SPDX-License-Identifier = "HPND-sell-variant"
+
+[[annotations]]
+path = [
+    "third_party/wayland-protocols/hyprland-protocols/*.xml",
+    "third_party/wayland-protocols/hyprland-protocols/LICENSE",
+]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2022 Hypr Development"
+SPDX-License-Identifier = "BSD-3-Clause"
