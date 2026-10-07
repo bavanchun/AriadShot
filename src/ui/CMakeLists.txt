@@ -8,5 +8,13 @@ target_sources(ariadshot_ui PRIVATE
     ViewObject.h
     ViewObject.cpp
     ViewRoot.h
-    ViewRoot.cpp)
+    ViewRoot.cpp
+    chrome/ChromeMenu.h
+    chrome/ChromeMenu.cpp
+    chrome/Popover.h
+    chrome/Popover.cpp
+    chrome/ToolTipView.h
+    chrome/ToolTipView.cpp
+    text/CanvasTextControl.h
+    text/CanvasTextControl.cpp)
 target_link_libraries(ariadshot_ui PUBLIC AriadShot::core AriadShot::render AriadShot::platform Qt6::Gui)

@@ -41,3 +41,7 @@ AriadShot does not reuse MacShot's name, logo, DMG artwork, capture sound, embed
 | `tests/unit/render/tst_Pixelate.cpp` | `macshot/Model/Annotation.swift:1990-2015` | the same step sizes, as expected values |
 | `src/render/beautify/Shadow.cpp` | `macshot/Services/BeautifyRenderer.swift:493-591`, `:840-895` | the ambient and contact shadow table (alpha, offset and blur for a radius) and the pass orders of the rounded, window-body and snapped-window shadows |
 | `tests/unit/render/tst_Shadow.cpp` | `macshot/Services/BeautifyRenderer.swift:493-518`, `:538-591`, `:867-884` | the same table values and pass orders, as expected values |
+| `src/ui/text/CanvasTextControl.cpp` | `macshot/UI/Tools/TextEditingController.swift:266,295,377` | text control frame dimensions, 4 pt inset, and 20 pt minimum fitted width |
+| `tests/unit/ui/tst_CanvasTextControl.cpp` | `macshot/UI/Tools/TextEditingController.swift:266,295,377` | the same text control dimensions and inset, as expected values |
+| `src/ui/chrome/Popover.cpp` | `macshot/UI/Overlay/OverlayView+Popovers.swift:39` | popover 4 pt anchor gap |
+| `tests/unit/ui/tst_ChromeContainers.cpp` | `macshot/UI/Overlay/OverlayView+Popovers.swift:39` | the same popover gap, as expected values |
