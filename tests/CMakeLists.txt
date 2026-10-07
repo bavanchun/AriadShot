@@ -27,6 +27,8 @@ QT_ENABLE_HIGHDPI_SCALING=unset:;\
 QT_FONT_DPI=unset:;\
 DBUS_SESSION_BUS_ADDRESS=unset:;\
 DEBUGINFOD_URLS=unset:;\
+SWAYSOCK=unset:;\
+HYPRLAND_INSTANCE_SIGNATURE=unset:;\
 HOME=set:${root}/home;\
 XDG_CONFIG_HOME=set:${root}/config;\
 XDG_DATA_HOME=set:${root}/data;\
@@ -43,6 +45,7 @@ ARIADSHOT_TEST_OUTPUT_DIR=set:${root}/output")
 endfunction()
 
 set(ARIADSHOT_WAYLAND_SOCKET "${PROJECT_BINARY_DIR}/wl.sock")
+set(ARIADSHOT_SWAY_IPC_SOCKET "${PROJECT_BINARY_DIR}/wl-ipc.sock")
 
 # Applies the Wayland client test environment with a fixed socket path and requires the Sway fixture.
 function(ariadshot_wayland_test_environment name)
@@ -50,7 +53,8 @@ function(ariadshot_wayland_test_environment name)
     set_property(TEST "${name}" APPEND PROPERTY FIXTURES_REQUIRED "wayland_sway")
     set_property(TEST "${name}" APPEND PROPERTY ENVIRONMENT_MODIFICATION
         "QT_QPA_PLATFORM=set:wayland;\
-WAYLAND_DISPLAY=set:${ARIADSHOT_WAYLAND_SOCKET}")
+WAYLAND_DISPLAY=set:${ARIADSHOT_WAYLAND_SOCKET};\
+SWAYSOCK=set:${ARIADSHOT_SWAY_IPC_SOCKET}")
 endfunction()
 
 # ariadshot_add_test(NAME <area>.<topic> SOURCES <files>... [LIBS <targets>...] [LABELS <labels>...])

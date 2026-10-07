@@ -9,6 +9,7 @@
 #include <cerrno>
 #include <cstring>
 #include <fcntl.h>
+#include <latch>
 #include <poll.h>
 #include <unistd.h>
 #include <wayland-client.h>
@@ -30,13 +31,59 @@ struct WaylandSession::Impl {
     std::thread::id dispatchThreadId;
     WaylandSession* q = nullptr;
 
+    void teardown(bool emitSignal) {
+        const bool wasConnected = isConnected.exchange(false, std::memory_order_acq_rel);
+        if (!wasConnected && !thread.joinable() && display == nullptr) {
+            return;
+        }
+
+        stopping.store(true, std::memory_order_release);
+
+        if (wakePipe[1] >= 0) {
+            const char byte = 1;
+            [[maybe_unused]] const auto written = write(wakePipe[1], &byte, sizeof(byte));
+        }
+
+        if (thread.joinable()) {
+            thread.join();
+        }
+
+        outputRegistry.cleanup();
+
+        if (registry != nullptr) {
+            wl_registry_destroy(registry);
+            registry = nullptr;
+        }
+
+        if (queue != nullptr) {
+            wl_event_queue_destroy(queue);
+            queue = nullptr;
+        }
+
+        if (display != nullptr) {
+            wl_display_disconnect(display);
+            display = nullptr;
+        }
+
+        if (wakePipe[0] >= 0) {
+            close(wakePipe[0]);
+            wakePipe[0] = -1;
+        }
+        if (wakePipe[1] >= 0) {
+            close(wakePipe[1]);
+            wakePipe[1] = -1;
+        }
+
+        if (emitSignal && wasConnected) {
+            Q_EMIT q->disconnected();
+        }
+    }
+
     void dispatchLoop() {
         // Thread: WaylandSession
-        dispatchThreadId = std::this_thread::get_id();
-        isDispatching.store(true, std::memory_order_release);
-
         while (!stopping.load(std::memory_order_acquire)) {
-            while (wl_display_prepare_read_queue(display, queue) != 0) {
+            int prepRet = -1;
+            while ((prepRet = wl_display_prepare_read_queue(display, queue)) != 0) {
                 if (stopping.load(std::memory_order_acquire)) {
                     break;
                 }
@@ -45,7 +92,11 @@ struct WaylandSession::Impl {
                 }
             }
 
-            if (stopping.load(std::memory_order_acquire) || wl_display_get_error(display) != 0) {
+            if (prepRet == 0 && (stopping.load(std::memory_order_acquire) || wl_display_get_error(display) != 0)) {
+                wl_display_cancel_read(display);
+                break;
+            }
+            if (prepRet != 0) {
                 break;
             }
 
@@ -152,6 +203,10 @@ bool WaylandSession::connectAndStart() {
         return true;
     }
 
+    if (m_impl->thread.joinable() || m_impl->display != nullptr) {
+        m_impl->teardown(/*emitSignal=*/false);
+    }
+
     const QByteArray nameBytes = m_impl->displayName.toUtf8();
     const char* displayArg = m_impl->displayName.isEmpty() ? nullptr : nameBytes.constData();
     m_impl->display = wl_display_connect(displayArg);
@@ -193,11 +248,15 @@ bool WaylandSession::connectAndStart() {
     m_impl->stopping.store(false, std::memory_order_release);
     m_impl->isConnected.store(true, std::memory_order_release);
 
-    m_impl->thread = std::thread([this]() { m_impl->dispatchLoop(); });
+    std::latch startedLatch{1};
+    m_impl->thread = std::thread([this, &startedLatch]() {
+        m_impl->dispatchThreadId = std::this_thread::get_id();
+        m_impl->isDispatching.store(true, std::memory_order_release);
+        startedLatch.count_down();
+        m_impl->dispatchLoop();
+    });
 
-    while (!m_impl->isDispatching.load(std::memory_order_acquire)) {
-        std::this_thread::yield();
-    }
+    startedLatch.wait();
 
     Q_EMIT connected();
     return true;
@@ -205,51 +264,17 @@ bool WaylandSession::connectAndStart() {
 
 void WaylandSession::disconnectAndStop() {
     // Thread: GUI
-    const bool wasConnected = m_impl->isConnected.exchange(false, std::memory_order_acq_rel);
-    if (!wasConnected && !m_impl->thread.joinable() && m_impl->display == nullptr) {
-        return;
-    }
+    m_impl->teardown(/*emitSignal=*/true);
+}
 
-    m_impl->stopping.store(true, std::memory_order_release);
+void WaylandSession::setDisplayName(const QString& displayName) {
+    // Thread: GUI
+    m_impl->displayName = displayName;
+}
 
-    if (m_impl->wakePipe[1] >= 0) {
-        const char byte = 1;
-        [[maybe_unused]] const auto written = write(m_impl->wakePipe[1], &byte, sizeof(byte));
-    }
-
-    if (m_impl->thread.joinable()) {
-        m_impl->thread.join();
-    }
-
-    m_impl->outputRegistry.cleanup();
-
-    if (m_impl->registry != nullptr) {
-        wl_registry_destroy(m_impl->registry);
-        m_impl->registry = nullptr;
-    }
-
-    if (m_impl->queue != nullptr) {
-        wl_event_queue_destroy(m_impl->queue);
-        m_impl->queue = nullptr;
-    }
-
-    if (m_impl->display != nullptr) {
-        wl_display_disconnect(m_impl->display);
-        m_impl->display = nullptr;
-    }
-
-    if (m_impl->wakePipe[0] >= 0) {
-        close(m_impl->wakePipe[0]);
-        m_impl->wakePipe[0] = -1;
-    }
-    if (m_impl->wakePipe[1] >= 0) {
-        close(m_impl->wakePipe[1]);
-        m_impl->wakePipe[1] = -1;
-    }
-
-    if (wasConnected) {
-        Q_EMIT disconnected();
-    }
+QString WaylandSession::displayName() const {
+    // Thread: any
+    return m_impl->displayName;
 }
 
 bool WaylandSession::isConnected() const { return m_impl->isConnected.load(std::memory_order_acquire); }

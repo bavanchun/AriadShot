@@ -24,3 +24,7 @@ SPDX-License-Identifier: GPL-3.0-only
   (`docs/spec/02-modules-and-interfaces.md` §1). It may NOT link `render` or `media`. The configure step and
   `scripts/check-architecture.sh` enforce this.
 - **Platform capabilities.** Ask the capability registry, never the desktop name.
+- **Output geometry and sizing.** `WaylandOutputInfo::bufferDerivedSize` is derived strictly from `currentModeSize`,
+  `transform` and integer `scale`. It does NOT represent the compositor's logical desktop layout or screen
+  positioning; logical layout is deferred to later protocol edges (`zxdg_output_manager_v1` or
+  `wp_fractional_scale_manager_v1`).

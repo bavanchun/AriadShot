@@ -18,7 +18,7 @@ class OutputMatchingTest : public QObject {
     void testUnmatchedWaylandOutput();
     void testUnmatchedScreenName();
     void testEmptyInputs();
-    void testLogicalGeometryCalculation();
+    void testBufferDerivedSizeCalculation();
     void testMatchScreensWithUnmatchedWarning();
     void testRegistrySignals();
 };
@@ -124,46 +124,38 @@ void OutputMatchingTest::testEmptyInputs() {
     QCOMPARE(emptyOutputs.unmatchedScreenNames.size(), 1);
 }
 
-void OutputMatchingTest::testLogicalGeometryCalculation() {
+void OutputMatchingTest::testBufferDerivedSizeCalculation() {
     // 1. Standard 1x unrotated output
     WaylandOutputInfo standard;
-    standard.geometryPosition = QPoint(0, 0);
     standard.currentModeSize = QSize(1920, 1080);
     standard.scale = 1;
     standard.transform = 0; // WL_OUTPUT_TRANSFORM_NORMAL
 
-    QCOMPARE(standard.logicalSize(), QSize(1920, 1080));
-    QCOMPARE(standard.logicalGeometry(), QRect(0, 0, 1920, 1080));
+    QCOMPARE(standard.bufferDerivedSize(), QSize(1920, 1080));
 
-    // 2. High-DPI 2x unrotated output positioned next to standard
+    // 2. High-DPI 2x unrotated output
     WaylandOutputInfo hidpi;
-    hidpi.geometryPosition = QPoint(1920, 0);
     hidpi.currentModeSize = QSize(3840, 2160);
     hidpi.scale = 2;
     hidpi.transform = 0;
 
-    QCOMPARE(hidpi.logicalSize(), QSize(1920, 1080));
-    QCOMPARE(hidpi.logicalGeometry(), QRect(1920, 0, 1920, 1080));
+    QCOMPARE(hidpi.bufferDerivedSize(), QSize(1920, 1080));
 
-    // 3. Rotated 90 degrees output: buffer mode is 1920x1080, logical size swaps to 1080x1920
+    // 3. Rotated 90 degrees output: buffer mode is 1920x1080, buffer-derived size swaps to 1080x1920
     WaylandOutputInfo rotated90;
-    rotated90.geometryPosition = QPoint(3840, 0);
     rotated90.currentModeSize = QSize(1920, 1080);
     rotated90.scale = 1;
     rotated90.transform = 1; // WL_OUTPUT_TRANSFORM_90
 
-    QCOMPARE(rotated90.logicalSize(), QSize(1080, 1920));
-    QCOMPARE(rotated90.logicalGeometry(), QRect(3840, 0, 1080, 1920));
+    QCOMPARE(rotated90.bufferDerivedSize(), QSize(1080, 1920));
 
     // 4. Rotated 270 degrees output (like HEADLESS-2 in headless Sway harness)
     WaylandOutputInfo rotated270;
-    rotated270.geometryPosition = QPoint(0, 1080);
     rotated270.currentModeSize = QSize(1920, 1080);
     rotated270.scale = 1;
     rotated270.transform = 3; // WL_OUTPUT_TRANSFORM_270
 
-    QCOMPARE(rotated270.logicalSize(), QSize(1080, 1920));
-    QCOMPARE(rotated270.logicalGeometry(), QRect(0, 1080, 1080, 1920));
+    QCOMPARE(rotated270.bufferDerivedSize(), QSize(1080, 1920));
 }
 
 void OutputMatchingTest::testMatchScreensWithUnmatchedWarning() {

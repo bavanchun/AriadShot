@@ -16,7 +16,7 @@
 
 namespace ariadshot::backends::wayland {
 
-QSize WaylandOutputInfo::logicalSize() const {
+QSize WaylandOutputInfo::bufferDerivedSize() const {
     const int effectiveScale = scale > 0 ? scale : 1;
     int w = currentModeSize.width() / effectiveScale;
     int h = currentModeSize.height() / effectiveScale;
@@ -30,8 +30,6 @@ QSize WaylandOutputInfo::logicalSize() const {
     }
     return {w, h};
 }
-
-QRect WaylandOutputInfo::logicalGeometry() const { return {geometryPosition, logicalSize()}; }
 
 namespace {
 
@@ -75,10 +73,9 @@ struct OutputRegistry::Impl {
 
 namespace {
 
-void handleGeometry(void* data, struct wl_output* /*output*/, int32_t x, int32_t y, int32_t physicalWidth,
+void handleGeometry(void* data, struct wl_output* /*output*/, int32_t /*x*/, int32_t /*y*/, int32_t physicalWidth,
                     int32_t physicalHeight, int32_t subpixel, const char* make, const char* model, int32_t transform) {
     auto* tracker = static_cast<OutputTracker*>(data);
-    tracker->pending.geometryPosition = QPoint(x, y);
     tracker->pending.physicalSizeMm = QSize(physicalWidth, physicalHeight);
     tracker->pending.subpixel = subpixel;
     tracker->pending.make = QString::fromUtf8(make);

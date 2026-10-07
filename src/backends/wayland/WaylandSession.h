@@ -39,6 +39,12 @@ class WaylandSession : public QObject {
     [[nodiscard]] bool isDispatching() const;
     [[nodiscard]] std::thread::id dispatchThreadId() const;
 
+    // Target Wayland display socket name/path
+    // Thread: GUI.
+    void setDisplayName(const QString& displayName);
+    // Thread: any.
+    [[nodiscard]] QString displayName() const;
+
     // Output registry tracking wl_output globals
     // Thread: any.
     [[nodiscard]] OutputRegistry* outputRegistry() const;
@@ -52,7 +58,7 @@ class WaylandSession : public QObject {
     // Thread: GUI.
     void connected();
     void disconnected();
-    // Thread: WaylandSession (dispatched via Qt::QueuedConnection on unexpected connection loss).
+    // Thread: GUI (dispatched via Qt::QueuedConnection on unexpected connection loss).
     void connectionLost();
 
   private:

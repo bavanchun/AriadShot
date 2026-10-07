@@ -5,8 +5,6 @@
 
 #include <QList>
 #include <QObject>
-#include <QPoint>
-#include <QRect>
 #include <QSize>
 #include <QString>
 #include <QStringList>
@@ -26,7 +24,6 @@ struct WaylandOutputInfo {
     uint32_t id = 0;
     QString name;
     QString description;
-    QPoint geometryPosition{0, 0};
     QSize physicalSizeMm{0, 0};
     int32_t subpixel = 0;
     QString make;
@@ -37,12 +34,12 @@ struct WaylandOutputInfo {
     int32_t refreshRate = 0; // mHz
     bool done = false;
 
-    // Logical geometry: derived from wl_output.geometry (x, y) and currentModeSize / scale.
-    // Integer scale is used as provided by wl_output v4; fractional scale layout or compositor-side
-    // logical positioning (e.g. zxdg_output_manager_v1) is planned for a later protocol slice.
+    // Buffer-derived size: derived from currentModeSize, transform and integer scale factor.
     // If transform swaps axes (90 or 270 deg rotation), width and height are transposed.
-    [[nodiscard]] QSize logicalSize() const;
-    [[nodiscard]] QRect logicalGeometry() const;
+    // Note: this represents buffer-space dimensions divided by integer scale, NOT the compositor's
+    // logical desktop layout or output coordinates (which requires xdg-output or fractional-scale
+    // protocol extensions planned for later phases).
+    [[nodiscard]] QSize bufferDerivedSize() const;
 
     friend bool operator==(const WaylandOutputInfo&, const WaylandOutputInfo&) = default;
 };

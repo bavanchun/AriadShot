@@ -6,10 +6,6 @@ cmake_minimum_required(VERSION 3.28)
 # macOS minimum; ignored on other platforms. Must be set before project().
 set(CMAKE_OSX_DEPLOYMENT_TARGET "14.0" CACHE STRING "Minimum macOS version")
 
-if(NOT DEFINED CMAKE_C_COMPILER AND CMAKE_CXX_COMPILER MATCHES "clang\\+\\+")
-    set(CMAKE_C_COMPILER "clang" CACHE STRING "C compiler")
-endif()
-
 project(AriadShot VERSION 0.0.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
