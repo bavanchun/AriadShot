@@ -20,6 +20,7 @@ socket_path=""
 processes_dir="$default_processes_dir"
 started_pid=""
 started_wayland_sock=""
+started_runtime_dir=""
 
 parse_options() {
     remaining_cmd=()
@@ -36,12 +37,14 @@ parse_options() {
 
 _stop_sway_state() {
     [ -f "$1" ] || return 0
-    local pid runtime_dir sf_sock
+    local pid runtime_dir sf_sock sf_ipc
     pid=$(sed -n 's/^pid=//p' "$1")
     runtime_dir=$(sed -n 's/^runtime_dir=//p' "$1")
     sf_sock=$(sed -n 's/^socket_path=//p' "$1")
+    sf_ipc=$(sed -n 's/^ipc_socket_path=//p' "$1")
     [ -z "$pid" ] || stop_process "$pid" "$processes_dir"
     [ -z "$sf_sock" ] || rm -f "$sf_sock"
+    [ -z "$sf_ipc" ] || rm -f "$sf_ipc"
     [ -z "$runtime_dir" ] || rm -rf "$runtime_dir"
     rm -f "$1"
 }
@@ -107,11 +110,18 @@ start_sway() {
     run_swaymsg create_output
     run_swaymsg "output HEADLESS-2 transform 90"
 
-    [ -z "$socket_path" ] || { mkdir -p "$(dirname "$socket_path")"; ln -sf "$wayland_sock" "$socket_path"; }
-    printf 'pid=%s\nruntime_dir=%s\nwayland_sock=%s\nsocket_path=%s\n' \
-        "$sway_pid" "$runtime_dir" "$wayland_sock" "$socket_path" > "$processes_dir/$sway_pid.sway-state"
+    local ipc_socket_path=""
+    if [ -n "$socket_path" ]; then
+        ipc_socket_path="${socket_path%.sock}-ipc.sock"
+        mkdir -p "$(dirname "$socket_path")"
+        ln -sf "$wayland_sock" "$socket_path"
+        ln -sf "$swaysock" "$ipc_socket_path"
+    fi
+    printf 'pid=%s\nruntime_dir=%s\nwayland_sock=%s\nsocket_path=%s\nipc_socket_path=%s\n' \
+        "$sway_pid" "$runtime_dir" "$wayland_sock" "$socket_path" "$ipc_socket_path" > "$processes_dir/$sway_pid.sway-state"
     started_pid=$sway_pid
     started_wayland_sock=$wayland_sock
+    started_runtime_dir=$runtime_dir
     return 0
 }
 
@@ -129,7 +139,10 @@ stop_sway() {
             fi
         done
     fi
-    [ -z "$socket_path" ] || rm -f "$socket_path"
+    if [ -n "$socket_path" ]; then
+        rm -f "$socket_path"
+        rm -f "${socket_path%.sock}-ipc.sock"
+    fi
     [ -z "$target_pid" ] || stop_process "$target_pid" "$processes_dir"
     return 0
 }
@@ -146,6 +159,9 @@ case "$cmd" in
         [ ${#remaining_cmd[@]} -gt 0 ] || die "Usage: run-headless-sway.sh start|stop|[exec] [options...] [--] COMMAND [ARGS...]"
         start_sway
         trap 'stop_sway "$started_pid"' EXIT INT TERM
-        env WAYLAND_DISPLAY="${socket_path:-$started_wayland_sock}" "${remaining_cmd[@]}"
+        exec_ipc=""
+        [ -z "$socket_path" ] || exec_ipc="${socket_path%.sock}-ipc.sock"
+        env WAYLAND_DISPLAY="${socket_path:-$started_wayland_sock}" SWAYSOCK="${exec_ipc:-$swaysock}" \
+            XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-$started_runtime_dir}" "${remaining_cmd[@]}"
         ;;
 esac

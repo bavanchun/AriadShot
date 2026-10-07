@@ -59,3 +59,53 @@ path = [
 precedence = "override"
 SPDX-FileCopyrightText = "2026 The AriadShot Authors"
 SPDX-License-Identifier = "GPL-3.0-only"
+
+[[annotations]]
+path = [
+    "third_party/wayland-protocols/wayland-protocols/ext-image-copy-capture-v1.xml",
+    "third_party/wayland-protocols/wayland-protocols/ext-image-capture-source-v1.xml",
+    "third_party/wayland-protocols/wayland-protocols/xdg-shell.xml",
+    "third_party/wayland-protocols/wayland-protocols/LICENSE",
+]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "Andri Yngvason, Simon Ser, Kristian Høgsberg, Rafael Antognolli, Jasper St. Pierre, Intel Corporation, Samsung Electronics Co., Ltd, Red Hat Inc., Collabora, Ltd., and contributors"
+SPDX-License-Identifier = "MIT"
+
+[[annotations]]
+path = [
+    "third_party/wayland-protocols/wayland-protocols/ext-data-control-v1.xml",
+    "third_party/wayland-protocols/wayland-protocols/ext-foreign-toplevel-list-v1.xml",
+]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "Simon Ser, Ivan Molodetskikh, Neal Gompa, Ilia Bozhinov, Isaac Freund, wb9688, i509VCB"
+SPDX-License-Identifier = "HPND-sell-variant"
+
+[[annotations]]
+path = [
+    "third_party/wayland-protocols/wlr-protocols/wlr-screencopy-unstable-v1.xml",
+    "third_party/wayland-protocols/wlr-protocols/wlr-virtual-pointer-unstable-v1.xml",
+    "third_party/wayland-protocols/wlr-protocols/LICENSE",
+]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2018-2019 Simon Ser, Andri Yngvason, Josef Gajdusek"
+SPDX-License-Identifier = "MIT"
+
+[[annotations]]
+path = [
+    "third_party/wayland-protocols/wlr-protocols/wlr-data-control-unstable-v1.xml",
+    "third_party/wayland-protocols/wlr-protocols/wlr-layer-shell-unstable-v1.xml",
+    "third_party/wayland-protocols/wlr-protocols/wlr-foreign-toplevel-management-unstable-v1.xml",
+]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2017-2019 Drew DeVault, Simon Ser, Ivan Molodetskikh, Ilia Bozhinov"
+SPDX-License-Identifier = "HPND-sell-variant"
+
+[[annotations]]
+path = [
+    "third_party/wayland-protocols/hyprland-protocols/*.xml",
+    "third_party/wayland-protocols/hyprland-protocols/LICENSE",
+]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2022 Hypr Development"
+SPDX-License-Identifier = "BSD-3-Clause"
+
