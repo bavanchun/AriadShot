@@ -242,31 +242,34 @@ class ObservedAccessibility {
 };
 
 // A view that overrides accessible() with its own interface.
+class CustomAccessibleView;
+
 class CustomAccessible final : public QAccessibleInterface {
   public:
-    explicit CustomAccessible(ViewObject& view) : m_view(view) {}
+    explicit CustomAccessible(CustomAccessibleView& view);
 
     bool isValid() const override { return true; }
     QObject* object() const override { return nullptr; }
     QAccessibleInterface* childAt(int, int) const override { return nullptr; }
-    QAccessibleInterface* parent() const override { return m_view.accessibleParent(); }
+    QAccessibleInterface* parent() const override;
     QAccessibleInterface* child(int) const override { return nullptr; }
     int childCount() const override { return 0; }
     int indexOfChild(const QAccessibleInterface*) const override { return -1; }
-    QString text(QAccessible::Text text) const override {
-        return text == QAccessible::Name ? m_view.accessibleName() : QString{};
-    }
+    QString text(QAccessible::Text text) const override;
     void setText(QAccessible::Text, const QString&) override {}
-    QRect rect() const override { return m_view.screenRect(); }
+    QRect rect() const override;
     QAccessible::Role role() const override { return QAccessible::EditableText; }
     QAccessible::State state() const override { return {}; }
 
   private:
-    ViewObject& m_view;
+    CustomAccessibleView& m_view;
+    mutable QString m_cachedName;
 };
 
 class CustomAccessibleView final : public ViewObject {
   public:
+    friend class CustomAccessible;
+
     explicit CustomAccessibleView(QRectF area) { setGeometry(area); }
     void paint(QPainter&) override {}
     QString accessibleName() const override { return QStringLiteral("custom"); }
@@ -281,6 +284,20 @@ class CustomAccessibleView final : public ViewObject {
   private:
     QAccessible::Id m_id = 0;
 };
+
+inline CustomAccessible::CustomAccessible(CustomAccessibleView& view)
+    : m_view(view), m_cachedName(view.accessibleName()) {}
+inline QAccessibleInterface* CustomAccessible::parent() const { return m_view.accessibleParent(); }
+inline QRect CustomAccessible::rect() const { return m_view.screenRect(); }
+inline QString CustomAccessible::text(QAccessible::Text text) const {
+    if (text == QAccessible::Name) {
+        if (!m_view.isDying()) {
+            m_cachedName = m_view.accessibleName();
+        }
+        return m_cachedName;
+    }
+    return {};
+}
 
 // The host's accessible root: its one child is the content's accessible interface, as a host window would add it.
 class HostAccessible final : public QAccessibleInterface {
@@ -405,6 +422,7 @@ class ViewRootTest : public QObject {
     void viewMovedAwayAndBackInsideRemovalHandlerEndsWithFinalAnnouncement();
     void topLevelViewMovedIntoGroupInsideRemovalHandlerClearsRemovingFlag();
     void removeViewDamagesLastPaintBounds();
+    void outsidePointerPressNotifiesViewsWithoutSwallowingClick();
     void hostPresentsContentThroughThePlatformInterfaces();
 };
 
@@ -1672,8 +1690,15 @@ void ViewRootTest::viewOverridingAccessibleIsAnnouncedWhileDestroyed() {
     QAccessibleInterface* const groupNode = group.accessible();
 
     changes().clear();
+    QString announcedName;
+    accessibilityCallback() = [&](QAccessibleEvent* event) {
+        if (event->type() == QAccessible::ObjectDestroyed && event->accessibleInterface() == customNode) {
+            announcedName = event->accessibleInterface()->text(QAccessible::Name);
+        }
+    };
     custom.reset();
 
+    QCOMPARE(announcedName, QStringLiteral("custom"));
     QCOMPARE(changes(), (std::vector<Change>{
                             change(QAccessible::ObjectDestroyed, customNode, groupNode, 0),
                         }));
@@ -1751,6 +1776,48 @@ void ViewRootTest::removeViewDamagesLastPaintBounds() {
     (void)root.removeView(*viewPtr);
 
     QCOMPARE(root.takeDamage(), QRegion(30, 30, 40, 40));
+}
+
+void ViewRootTest::outsidePointerPressNotifiesViewsWithoutSwallowingClick() {
+    ViewRoot root;
+    root.resize({200, 200}, 1.0);
+
+    // Behind view: a button at (150, 150, 40, 40)
+    TestView& button = addView(root, {150, 150, 40, 40});
+    button.name = QStringLiteral("button");
+
+    // Front view: a container at (10, 10, 100, 100) that dismisses on outside press
+    class DismissingView final : public ViewObject {
+      public:
+        explicit DismissingView(QRectF area) { setGeometry(area); }
+        void paint(QPainter&) override {}
+        QString accessibleName() const override { return QStringLiteral("dismissible"); }
+        QAccessible::Role accessibleRole() const override { return QAccessible::LayeredPane; }
+        ViewObject* hitTest(QPointF point) override { return (open && geometry().contains(point)) ? this : nullptr; }
+        void rootPointerPressed(QPointF point) override {
+            if (open && !geometry().contains(point)) {
+                open = false;
+                dismissedOnOutside = true;
+            }
+        }
+        bool open = true;
+        bool dismissedOnOutside = false;
+    };
+
+    auto overlay = std::make_unique<DismissingView>(QRectF{10, 10, 100, 100});
+    DismissingView* const overlayPtr = overlay.get();
+    root.addView(std::move(overlay));
+
+    // Click on the button at (160, 160)
+    mouse(root, QEvent::MouseButtonPress, {160, 160});
+    mouse(root, QEvent::MouseButtonRelease, {160, 160});
+
+    // The overlay should have received rootPointerPressed and dismissed
+    QVERIFY(overlayPtr->dismissedOnOutside);
+    QVERIFY(!overlayPtr->open);
+
+    // And the button behind MUST have received the press and release events!
+    QCOMPARE(button.events, (Events{QEvent::MouseButtonPress, QEvent::MouseButtonRelease}));
 }
 
 void ViewRootTest::hostPresentsContentThroughThePlatformInterfaces() {

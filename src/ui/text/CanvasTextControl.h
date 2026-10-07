@@ -8,10 +8,12 @@
 #include <QAccessible>
 #include <QColor>
 #include <QFont>
+#include <QPaintDevice>
 #include <QPointF>
 #include <QRectF>
 #include <QString>
 #include <QTextCursor>
+#include <QTextLayout>
 
 #include <functional>
 #include <memory>
@@ -28,6 +30,11 @@ namespace ariadshot::ui {
 // Ports MacShot's text editing controller and scoped text view
 // (macshot/macshot/UI/Tools/TextEditingController.swift@b4d4f3a,
 //  macshot/macshot/UI/Tools/ScopedUndoTextView.swift@b4d4f3a).
+// Appearance and sizing:
+//  - font size clamped to 8..200 (ToolOptionsRowView.swift:1784-1805)
+//  - initial box width 200, height max(28, fontSize + 12) (TextEditingController.swift:264-265)
+//  - Enter inserts newline, Esc cancels (OverlayView.swift:10255-10262)
+// Visual styling (selection handles, dash pattern) will be refined in M1.
 // Built on public QTextDocument, QTextCursor and QTextLayout APIs;
 // handles QInputMethodEvents inline and reports damage for edited region only.
 class CanvasTextControl : public ViewObject {
@@ -91,12 +98,17 @@ class CanvasTextControl : public ViewObject {
     [[nodiscard]] QRectF lastReportedDamage() const { return m_lastDamage; }
 
     void paint(QPainter& painter) override;
+    void rootPointerPressed(QPointF point) override;
     ViewObject* hitTest(QPointF point) override;
     void handleEvent(const QEvent& event) override;
     void inputMethodQuery(QInputMethodQueryEvent& query) override;
     [[nodiscard]] std::optional<Qt::CursorShape> cursorAt(QPointF point) const override;
 
+    QAccessibleInterface* accessible() override;
+
   private:
+    friend class CanvasTextControlAccessible;
+
     [[nodiscard]] QFont currentFont() const;
     [[nodiscard]] QRectF cursorSurfaceRect() const;
     void updateLayout();
@@ -104,6 +116,7 @@ class CanvasTextControl : public ViewObject {
     void handleInputMethod(const class QInputMethodEvent& event);
     void handleKeyPress(const class QKeyEvent& event);
 
+    std::unique_ptr<QPaintDevice> m_layoutDevice;
     std::unique_ptr<QTextDocument> m_document;
     QTextCursor m_cursor;
     const render::FontSet* m_fontSet = nullptr;
@@ -121,6 +134,7 @@ class CanvasTextControl : public ViewObject {
 
     QString m_preeditString;
     int m_preeditCursorPos = 0;
+    QList<QTextLayout::FormatRange> m_preeditFormats;
     bool m_editing = false;
     QRectF m_lastDamage;
 

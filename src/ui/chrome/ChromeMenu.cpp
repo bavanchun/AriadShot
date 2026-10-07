@@ -3,11 +3,15 @@
 
 #include "ui/chrome/ChromeMenu.h"
 
+#include <QAccessibleActionInterface>
 #include <QFont>
 #include <QFontMetricsF>
 #include <QKeyEvent>
 #include <QPainter>
 #include <QSinglePointEvent>
+#include <QStringList>
+
+#include <memory>
 
 namespace ariadshot::ui {
 
@@ -53,14 +57,14 @@ void ChromeMenu::clear() {
 
 void ChromeMenu::setAnchorView(const ViewObject* anchorView) {
     m_anchorView = anchorView;
-    if (anchorView != nullptr) {
-        m_anchorPoint = anchorView->geometry().bottomLeft();
+    if (const auto* anchor = m_anchorView.get()) {
+        m_anchorPoint = anchor->geometry().bottomLeft();
     }
 }
 
 void ChromeMenu::setAnchorPoint(QPointF point) {
     m_anchorPoint = point;
-    m_anchorView = nullptr;
+    m_anchorView = {};
 }
 
 void ChromeMenu::open(const ViewObject* anchorView, Edge edge) {
@@ -84,8 +88,10 @@ void ChromeMenu::open(ViewRoot& /*root*/, const ViewObject* anchorView, Edge edg
 void ChromeMenu::open(ViewRoot& /*root*/, QPointF anchorPoint, Edge edge) { open(anchorPoint, edge); }
 
 void ChromeMenu::followAnchor() {
-    if (m_anchorView != nullptr) {
-        m_anchorPoint = m_anchorView->geometry().bottomLeft();
+    if (const auto* anchor = m_anchorView.get()) {
+        m_anchorPoint = anchor->geometry().bottomLeft();
+    } else if (m_anchorView.isExpired()) {
+        m_anchorView = {};
     }
     updatePlacement();
 }
@@ -131,24 +137,24 @@ void ChromeMenu::updatePlacement() {
     constexpr qreal kGap = 2.0;
     qreal x = 0;
     qreal y = 0;
-    if (m_anchorView != nullptr) {
-        const QRectF anchor = m_anchorView->geometry();
+    if (const auto* anchor = m_anchorView.get()) {
+        const QRectF anchorGeo = anchor->geometry();
         switch (m_edge) {
         case Edge::Bottom:
-            x = anchor.left();
-            y = anchor.bottom() + kGap;
+            x = anchorGeo.left();
+            y = anchorGeo.bottom() + kGap;
             break;
         case Edge::Top:
-            x = anchor.left();
-            y = anchor.top() - totalHeight - kGap;
+            x = anchorGeo.left();
+            y = anchorGeo.top() - totalHeight - kGap;
             break;
         case Edge::Left:
-            x = anchor.left() - totalWidth - kGap;
-            y = anchor.top();
+            x = anchorGeo.left() - totalWidth - kGap;
+            y = anchorGeo.top();
             break;
         case Edge::Right:
-            x = anchor.right() + kGap;
-            y = anchor.top();
+            x = anchorGeo.right() + kGap;
+            y = anchorGeo.top();
             break;
         }
     } else {
@@ -233,14 +239,16 @@ void ChromeMenu::selectPrevious() {
     }
 }
 
+void ChromeMenu::rootPointerPressed(QPointF point) {
+    if (m_open && !geometry().contains(point)) {
+        dismiss();
+    }
+}
+
 ViewObject* ChromeMenu::hitTest(QPointF point) {
-    if (!m_open) {
+    if (!m_open || !geometry().contains(point)) {
         return nullptr;
     }
-    if (geometry().contains(point)) {
-        return this;
-    }
-    // Outside click dismisses
     return this;
 }
 
@@ -338,6 +346,206 @@ void ChromeMenu::paint(QPainter& painter) {
         }
     }
     painter.restore();
+}
+
+class ChromeMenuItemAccessible final : public QAccessibleInterface, public QAccessibleActionInterface {
+  public:
+    ChromeMenuItemAccessible(ChromeMenu& menu, int index) : m_menu(menu), m_index(index) {}
+
+    bool isValid() const override { return !m_menu.isDying() && m_index >= 0 && m_index < m_menu.itemCount(); }
+    QObject* object() const override { return nullptr; }
+    QAccessibleInterface* childAt(int /*x*/, int /*y*/) const override { return nullptr; }
+    QAccessibleInterface* parent() const override { return m_menu.accessible(); }
+    QAccessibleInterface* child(int /*index*/) const override { return nullptr; }
+    int childCount() const override { return 0; }
+    int indexOfChild(const QAccessibleInterface* /*child*/) const override { return -1; }
+
+    QString text(QAccessible::Text t) const override {
+        if (!isValid()) {
+            return {};
+        }
+        if (t == QAccessible::Name) {
+            return m_menu.itemAt(m_index).text;
+        }
+        if (t == QAccessible::Accelerator) {
+            return m_menu.itemAt(m_index).shortcut;
+        }
+        return {};
+    }
+    void setText(QAccessible::Text /*t*/, const QString& /*text*/) override {}
+
+    QRect rect() const override {
+        if (!isValid()) {
+            return {};
+        }
+        const QRect menuRect = m_menu.screenRect();
+        int y = menuRect.top() + 4;
+        constexpr int kItemHeight = 26;
+        constexpr int kSeparatorHeight = 8;
+        for (int i = 0; i < m_index; ++i) {
+            y += m_menu.itemAt(i).isSeparator ? kSeparatorHeight : kItemHeight;
+        }
+        const int h = m_menu.itemAt(m_index).isSeparator ? kSeparatorHeight : kItemHeight;
+        return {menuRect.left() + 4, y, menuRect.width() - 8, h};
+    }
+
+    QAccessible::Role role() const override {
+        if (!isValid()) {
+            return QAccessible::NoRole;
+        }
+        return m_menu.itemAt(m_index).isSeparator ? QAccessible::Separator : QAccessible::MenuItem;
+    }
+
+    QAccessible::State state() const override {
+        QAccessible::State s;
+        if (!isValid()) {
+            return s;
+        }
+        const auto& item = m_menu.itemAt(m_index);
+        s.focusable = !item.isSeparator;
+        s.disabled = !item.enabled;
+        s.checked = item.checked;
+        if (m_menu.hoveredIndex() == m_index) {
+            s.focused = true;
+        }
+        return s;
+    }
+
+    void* interface_cast(QAccessible::InterfaceType type) override {
+        if (type == QAccessible::ActionInterface) {
+            return static_cast<QAccessibleActionInterface*>(this);
+        }
+        return nullptr;
+    }
+
+    QStringList actionNames() const override {
+        if (isValid() && !m_menu.itemAt(m_index).isSeparator && m_menu.itemAt(m_index).enabled) {
+            return {pressAction()};
+        }
+        return {};
+    }
+
+    void doAction(const QString& actionName) override {
+        if (isValid() && actionName == pressAction()) {
+            m_menu.triggerItem(m_index);
+        }
+    }
+
+    QStringList keyBindingsForAction(const QString& /*actionName*/) const override {
+        if (isValid() && !m_menu.itemAt(m_index).shortcut.isEmpty()) {
+            return {m_menu.itemAt(m_index).shortcut};
+        }
+        return {};
+    }
+
+  private:
+    ChromeMenu& m_menu;
+    int m_index;
+};
+
+class ChromeMenuAccessible final : public QAccessibleInterface {
+  public:
+    explicit ChromeMenuAccessible(ChromeMenu& menu) : m_menu(menu) {}
+
+    ~ChromeMenuAccessible() override {
+        for (const auto id : m_childIds) {
+            if (id != 0) {
+                QAccessible::deleteAccessibleInterface(id);
+            }
+        }
+        m_childIds.clear();
+    }
+
+    bool isValid() const override { return !m_menu.isDying(); }
+    QObject* object() const override { return nullptr; }
+
+    QAccessibleInterface* childAt(int x, int y) const override {
+        if (!isValid()) {
+            return nullptr;
+        }
+        for (int i = 0; i < childCount(); ++i) {
+            if (QAccessibleInterface* const c = child(i)) {
+                if (c->rect().contains(x, y)) {
+                    return c;
+                }
+            }
+        }
+        return nullptr;
+    }
+
+    QAccessibleInterface* parent() const override { return m_menu.accessibleParent(); }
+
+    int childCount() const override {
+        if (!isValid()) {
+            return 0;
+        }
+        return m_menu.itemCount();
+    }
+
+    QAccessibleInterface* child(int index) const override {
+        if (!isValid() || index < 0 || index >= m_menu.itemCount()) {
+            return nullptr;
+        }
+        ensureChildrenCapacity();
+        const auto idx = static_cast<std::size_t>(index);
+        if (m_childIds[idx] == 0) {
+            auto itemAccessible = std::make_unique<ChromeMenuItemAccessible>(m_menu, index);
+            m_childIds[idx] = QAccessible::registerAccessibleInterface(itemAccessible.release());
+        }
+        return QAccessible::accessibleInterface(m_childIds[idx]);
+    }
+
+    int indexOfChild(const QAccessibleInterface* child) const override {
+        if (!isValid() || child == nullptr) {
+            return -1;
+        }
+        for (int i = 0; i < childCount(); ++i) {
+            if (this->child(i) == child) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    QString text(QAccessible::Text t) const override {
+        if (t == QAccessible::Name && isValid()) {
+            return m_menu.accessibleName();
+        }
+        return {};
+    }
+    void setText(QAccessible::Text /*t*/, const QString& /*text*/) override {}
+
+    QRect rect() const override { return m_menu.screenRect(); }
+
+    QAccessible::Role role() const override { return QAccessible::PopupMenu; }
+
+    QAccessible::State state() const override { return {}; }
+
+  private:
+    void ensureChildrenCapacity() const {
+        const auto count = static_cast<std::size_t>(m_menu.itemCount());
+        if (m_childIds.size() != count) {
+            if (m_childIds.size() > count) {
+                for (std::size_t i = count; i < m_childIds.size(); ++i) {
+                    if (m_childIds[i] != 0) {
+                        QAccessible::deleteAccessibleInterface(m_childIds[i]);
+                    }
+                }
+            }
+            m_childIds.resize(count, 0);
+        }
+    }
+
+    ChromeMenu& m_menu;
+    mutable std::vector<QAccessible::Id> m_childIds;
+};
+
+QAccessibleInterface* ChromeMenu::accessible() {
+    if (m_accessibleId == 0) {
+        m_accessibleId =
+            QAccessible::registerAccessibleInterface(std::make_unique<ChromeMenuAccessible>(*this).release());
+    }
+    return QAccessible::accessibleInterface(m_accessibleId);
 }
 
 } // namespace ariadshot::ui

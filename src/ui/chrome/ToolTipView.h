@@ -35,11 +35,13 @@ class ToolTipView : public ViewObject {
     [[nodiscard]] QString text() const { return m_text; }
 
     void setAnchorView(const ViewObject* anchorView);
-    [[nodiscard]] const ViewObject* anchorView() const { return m_anchorView; }
+    [[nodiscard]] const ViewObject* anchorView() const { return m_anchorView.get(); }
 
     void setAnchorPoint(QPointF point);
     [[nodiscard]] QPointF anchorPoint() const { return m_anchorPoint; }
 
+    // Structural tooltip overlay for M0; visual styling (colors, padding, corner radii,
+    // shadows) will be refined against MacShot's SwiftUI chrome in M1.
     void open(const ViewObject* anchorView, const QString& text = {}, Edge edge = Edge::Bottom);
     void open(QPointF anchorPoint, const QString& text = {}, Edge edge = Edge::Bottom);
     void open(ViewRoot& root, const ViewObject* anchorView, const QString& text = {}, Edge edge = Edge::Bottom);
@@ -51,6 +53,7 @@ class ToolTipView : public ViewObject {
     void dismiss();
     [[nodiscard]] bool isOpen() const { return m_open; }
 
+    void rootPointerPressed(QPointF point) override;
     ViewObject* hitTest(QPointF point) override;
     void handleEvent(const QEvent& event) override;
     void paint(QPainter& painter) override;
@@ -58,7 +61,7 @@ class ToolTipView : public ViewObject {
   private:
     QString m_text;
     Edge m_edge = Edge::Bottom;
-    const ViewObject* m_anchorView = nullptr;
+    ConstViewRef m_anchorView;
     QPointF m_anchorPoint;
     bool m_open = false;
 };

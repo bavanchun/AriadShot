@@ -2,14 +2,19 @@
 // SPDX-FileCopyrightText: sw33tLie and MacShot contributors
 // SPDX-License-Identifier: GPL-3.0-only
 
+#include "render/text/FontSet.h"
 #include "ui/ViewRoot.h"
 #include "ui/text/CanvasTextControl.h"
 
 #include <QAccessible>
+#include <QAccessibleEditableTextInterface>
+#include <QAccessibleTextInterface>
+#include <QImage>
 #include <QInputMethodEvent>
 #include <QInputMethodQueryEvent>
 #include <QKeyEvent>
 #include <QMouseEvent>
+#include <QPainter>
 #include <QTest>
 #include <QTextDocument>
 
@@ -19,13 +24,26 @@
 namespace ariadshot::ui {
 namespace {
 
+class DummyButtonView final : public ViewObject {
+  public:
+    explicit DummyButtonView(QRectF area) { setGeometry(area); }
+    void paint(QPainter&) override {}
+    [[nodiscard]] QString accessibleName() const override { return QStringLiteral("Button"); }
+    [[nodiscard]] QAccessible::Role accessibleRole() const override { return QAccessible::PushButton; }
+    void handleEvent(const QEvent& event) override {
+        if (event.type() == QEvent::MouseButtonPress) {
+            clicked = true;
+        }
+    }
+    bool clicked = false;
+};
+
 void sendInputMethod(ViewRoot& root, CanvasTextControl& control, const QString& commit, const QString& preedit,
                      int replacementStart = 0, int replacementLength = 0) {
     QList<QInputMethodEvent::Attribute> attributes;
     if (!preedit.isEmpty()) {
         attributes.append(QInputMethodEvent::Attribute(QInputMethodEvent::TextFormat, 0, preedit.length(), {}));
     }
-    const QInputMethodEvent event(preedit, attributes);
     // If commit is non-empty or replacement is specified, create full event
     QInputMethodEvent imEvent(preedit, attributes);
     imEvent.setCommitString(commit, replacementStart, replacementLength);
@@ -62,6 +80,12 @@ class CanvasTextControlTest : public QObject {
     void scopedTypingUndo();
     void accessibleNameAndRole();
     void damageReportedForEditedRegionOnly();
+    void commitWithActivePreeditPreservesComposition();
+    void callbackDestroyingControlIsSafe();
+    void closedControlPaintsNothing();
+    void outsideClickDismissesAndTriggersUnderlyingButton();
+    void fontSetUnderlineAndStrikethrough();
+    void replacementPathReplacesSurroundingText();
 };
 
 // macshot/macshot/UI/Tools/TextEditingController.swift:256-268@b4d4f3a
@@ -79,13 +103,26 @@ void CanvasTextControlTest::preeditShownInlineAndNotCommitted() {
     QVERIFY(controlPtr->isEditing());
     QVERIFY(controlPtr->text().isEmpty());
 
+    // Send text "Hello "
+    sendInputMethod(root, *controlPtr, QStringLiteral("Hello "), QString());
+
+    QInputMethodQueryEvent queryBefore(Qt::ImCursorRectangle);
+    controlPtr->inputMethodQuery(queryBefore);
+    const QRectF caretBefore = queryBefore.value(Qt::ImCursorRectangle).toRectF();
+
     // Send preedit "chao"
     sendInputMethod(root, *controlPtr, QString(), QStringLiteral("chao"));
 
     // Preedit is visible inline, but not committed to document text
     QCOMPARE(controlPtr->preeditString(), QStringLiteral("chao"));
-    QVERIFY(controlPtr->text().isEmpty());
-    QCOMPARE(controlPtr->document()->toPlainText(), QString());
+    QCOMPARE(controlPtr->text(), QStringLiteral("Hello "));
+    QCOMPARE(controlPtr->document()->toPlainText(), QStringLiteral("Hello "));
+
+    // Caret shifted right by the preedit advance
+    QInputMethodQueryEvent queryAfter(Qt::ImCursorRectangle);
+    controlPtr->inputMethodQuery(queryAfter);
+    const QRectF caretAfter = queryAfter.value(Qt::ImCursorRectangle).toRectF();
+    QVERIFY(caretAfter.x() > caretBefore.x());
 }
 
 // macshot/macshot/UI/Tools/TextEditingController.swift:280-320@b4d4f3a
@@ -162,24 +199,31 @@ void CanvasTextControlTest::inputMethodQueryReturnsCaretRectInSurfaceCoordinates
     controlPtr->openNew(origin, 20.0);
     root.setInputMethodOwner(controlPtr);
 
-    QInputMethodQueryEvent query(Qt::ImCursorRectangle);
-    controlPtr->inputMethodQuery(query);
+    // Query ImEnabled and ImCursorRectangle via root
+    QInputMethodQueryEvent query(Qt::ImCursorRectangle | Qt::ImEnabled);
+    root.inputMethodQuery(query);
+    QCOMPARE(query.value(Qt::ImEnabled).toBool(), true);
     const QRectF initialCaretRect = query.value(Qt::ImCursorRectangle).toRectF();
 
-    // Caret must be in surface coordinates: origin is at (150, 200), inset is 4pt
+    // Exact caret position: origin (150, 200) + inset 4pt = (154, 204)
     // macshot/macshot/UI/Tools/TextEditingController.swift:295@b4d4f3a
-    QVERIFY(initialCaretRect.x() >= origin.x());
-    QVERIFY(initialCaretRect.y() >= origin.y());
+    QCOMPARE(initialCaretRect.topLeft(), QPointF(154.0, 204.0));
     QVERIFY(controlPtr->geometry().contains(initialCaretRect.topLeft()));
 
     // When text is typed, caret moves to the right
     sendInputMethod(root, *controlPtr, QStringLiteral("Testing"), QString());
     QInputMethodQueryEvent query2(Qt::ImCursorRectangle);
-    controlPtr->inputMethodQuery(query2);
+    root.inputMethodQuery(query2);
     const QRectF advancedCaretRect = query2.value(Qt::ImCursorRectangle).toRectF();
 
     QVERIFY(advancedCaretRect.x() > initialCaretRect.x());
     QVERIFY(controlPtr->geometry().contains(advancedCaretRect.topLeft()));
+
+    // When editing ends, ImEnabled answers false
+    controlPtr->commit();
+    QInputMethodQueryEvent query3(Qt::ImEnabled);
+    root.inputMethodQuery(query3);
+    QCOMPARE(query3.value(Qt::ImEnabled).toBool(), false);
 }
 
 // spec 06 §3.2
@@ -318,7 +362,7 @@ void CanvasTextControlTest::frameAndLiveResizeGeometry() {
     QCOMPARE(expandedGeo.top(), 50.0);
     QVERIFY(expandedGeo.height() > 32.0);
 
-    // Commit geometry shrinks to text: width = max(ceil(w) + 2*inset, 20)
+    // Commit geometry shrinks to text: width = max(ceil(w) + 2*inset, 20), height = max(minH, ceil(h) + 2*inset)
     QRectF finalRect;
     controlPtr->setOnCommitted([&](const QString&, QRectF r) { finalRect = r; });
     controlPtr->commit();
@@ -327,6 +371,22 @@ void CanvasTextControlTest::frameAndLiveResizeGeometry() {
     // Shrunk width must be less than 200 and at least 20
     QVERIFY(finalRect.width() <= 200.0);
     QVERIFY(finalRect.width() >= 20.0);
+    // Height for 4 lines of 20 pt text expands beyond minH (32.0)
+    QVERIFY(finalRect.height() > 32.0);
+
+    // Single-line 20 pt text committed height matches exact MacShot formula max(28, 20 + 12) = 32.0
+    auto singleControl = std::make_unique<CanvasTextControl>();
+    CanvasTextControl* const slPtr = singleControl.get();
+    root.addView(std::move(singleControl));
+    slPtr->openNew(QPointF{100, 100}, 20.0);
+    root.setFocusOwner(slPtr);
+    sendInputMethod(root, *slPtr, QStringLiteral("Single line"), QString());
+    QRectF slRect;
+    slPtr->setOnCommitted([&](const QString&, QRectF r) { slRect = r; });
+    slPtr->commit();
+    QCOMPARE(slRect.topLeft(), QPointF(100, 100));
+    QCOMPARE(slRect.height(), 32.0);
+    QVERIFY(slRect.width() >= 20.0 && slRect.width() <= 200.0);
 }
 
 // macshot/macshot/UI/Tools/ScopedUndoTextView.swift:9-17@b4d4f3a
@@ -359,12 +419,32 @@ void CanvasTextControlTest::accessibleNameAndRole() {
     CanvasTextControl control;
     control.openNew(QPointF{100, 100}, 20.0);
     QCOMPARE(control.accessibleRole(), QAccessible::EditableText);
-    QCOMPARE(control.accessibleName(), QStringLiteral("Text Editor"));
+    QCOMPARE(control.accessibleName(), QStringLiteral("Canvas text editor"));
 
-    ViewRoot root;
-    root.addView(std::make_unique<CanvasTextControl>());
     control.document()->setPlainText(QStringLiteral("Hello world"));
-    QCOMPARE(control.accessibleName(), QStringLiteral("Hello world"));
+
+    QAccessibleInterface* const iface = control.accessible();
+    if (!iface) {
+        QFAIL("iface is null");
+    }
+    QCOMPARE(iface->role(), QAccessible::EditableText);
+    QCOMPARE(iface->text(QAccessible::Name), QStringLiteral("Canvas text editor"));
+
+    QAccessibleTextInterface* const textIface = iface->textInterface();
+    if (!textIface) {
+        QFAIL("textIface is null");
+    }
+    QCOMPARE(textIface->characterCount(), 11);
+    QCOMPARE(textIface->text(0, 11), QStringLiteral("Hello world"));
+
+    QAccessibleEditableTextInterface* const editIface = iface->editableTextInterface();
+    if (!editIface) {
+        QFAIL("editIface is null");
+    }
+    editIface->insertText(11, QStringLiteral("!"));
+    QCOMPARE(control.text(), QStringLiteral("Hello world!"));
+    editIface->deleteText(5, 11);
+    QCOMPARE(control.text(), QStringLiteral("Hello!"));
 }
 
 // spec 06 §3.2, phase 13 step 2: reports damage for the edited region only
@@ -374,22 +454,150 @@ void CanvasTextControlTest::damageReportedForEditedRegionOnly() {
 
     auto control = std::make_unique<CanvasTextControl>();
     CanvasTextControl* const controlPtr = control.get();
-    root.addView(std::move(control));
     controlPtr->openNew(QPointF{200, 200}, 20.0);
+    root.addView(std::move(control));
     root.setFocusOwner(controlPtr);
 
-    // Initial damage reported should be within the control's paint bounds
-    const QRectF damageBefore = controlPtr->lastReportedDamage();
-    QVERIFY(!damageBefore.isEmpty());
-    QVERIFY(controlPtr->paintBounds().contains(damageBefore));
+    // Clear setup damage (resize, addView)
+    root.takeDamage();
 
     // Type text: damage reported must not cover the whole surface (1920x1080)
     sendInputMethod(root, *controlPtr, QStringLiteral("A"), QString());
-    const QRectF damageAfter = controlPtr->lastReportedDamage();
-    QVERIFY(!damageAfter.isEmpty());
-    QVERIFY(controlPtr->paintBounds().contains(damageAfter));
-    QVERIFY(damageAfter.width() < 300.0);
-    QVERIFY(damageAfter.height() < 100.0);
+    const QRect editDamage = root.takeDamage().boundingRect();
+    QVERIFY(!editDamage.isEmpty());
+    QVERIFY(controlPtr->paintBounds().toAlignedRect().contains(editDamage));
+    QVERIFY(editDamage.width() < 300);
+    QVERIFY(editDamage.height() < 100);
+
+    // And disjoint from a far region
+    const QRect farRegion(1000, 500, 200, 200);
+    QVERIFY(!editDamage.intersects(farRegion));
+}
+
+void CanvasTextControlTest::commitWithActivePreeditPreservesComposition() {
+    ViewRoot root;
+    root.resize({800, 600}, 1.0);
+
+    auto control = std::make_unique<CanvasTextControl>();
+    CanvasTextControl* const controlPtr = control.get();
+    root.addView(std::move(control));
+    controlPtr->openNew(QPointF{100, 100}, 20.0);
+    root.setInputMethodOwner(controlPtr);
+
+    // Send active composition Telex "chào" as preedit
+    sendInputMethod(root, *controlPtr, QString(), QStringLiteral("chào"));
+    QCOMPARE(controlPtr->preeditString(), QStringLiteral("chào"));
+    QVERIFY(controlPtr->text().isEmpty());
+
+    QString committedText;
+    controlPtr->setOnCommitted([&](const QString& text, QRectF) { committedText = text; });
+
+    controlPtr->commit();
+    QCOMPARE(committedText, QStringLiteral("chào"));
+    QCOMPARE(controlPtr->text(), QStringLiteral("chào"));
+}
+
+void CanvasTextControlTest::callbackDestroyingControlIsSafe() {
+    ViewRoot root;
+    root.resize({800, 600}, 1.0);
+
+    // 1. Commit destroying control
+    auto control1 = std::make_unique<CanvasTextControl>();
+    CanvasTextControl* const ptr1 = control1.get();
+    root.addView(std::move(control1));
+    ptr1->openNew(QPointF{100, 100}, 20.0);
+    ptr1->document()->setPlainText(QStringLiteral("Text"));
+    ptr1->setOnCommitted([&](const QString&, QRectF) { root.removeView(*ptr1); });
+    ptr1->commit();
+
+    // 2. Cancel destroying control
+    auto control2 = std::make_unique<CanvasTextControl>();
+    CanvasTextControl* const ptr2 = control2.get();
+    root.addView(std::move(control2));
+    ptr2->openNew(QPointF{100, 100}, 20.0);
+    ptr2->setOnCancelled([&]() { root.removeView(*ptr2); });
+    ptr2->cancel();
+}
+
+void CanvasTextControlTest::closedControlPaintsNothing() {
+    CanvasTextControl control;
+    control.openNew(QPointF{100, 100}, 20.0);
+    control.document()->setPlainText(QStringLiteral("Some visible text"));
+    QVERIFY(control.isEditing());
+
+    // Close control
+    control.cancel();
+    QVERIFY(!control.isEditing());
+
+    QImage img(400, 400, QImage::Format_ARGB32_Premultiplied);
+    img.fill(Qt::transparent);
+    {
+        QPainter p(&img);
+        control.paint(p);
+    }
+
+    // Verify all pixels remain transparent
+    for (int y = 0; y < img.height(); ++y) {
+        for (int x = 0; x < img.width(); ++x) {
+            QCOMPARE(img.pixelColor(x, y).alpha(), 0);
+        }
+    }
+}
+
+void CanvasTextControlTest::outsideClickDismissesAndTriggersUnderlyingButton() {
+    ViewRoot root;
+    root.resize({800, 600}, 1.0);
+
+    auto button = std::make_unique<DummyButtonView>(QRectF{450, 450, 100, 40});
+    DummyButtonView* const buttonPtr = button.get();
+    root.addView(std::move(button));
+
+    auto control = std::make_unique<CanvasTextControl>();
+    CanvasTextControl* const controlPtr = control.get();
+    root.addView(std::move(control));
+    controlPtr->openNew(QPointF{100, 100}, 20.0);
+    controlPtr->document()->setPlainText(QStringLiteral("Content"));
+    QVERIFY(controlPtr->isEditing());
+
+    buttonPtr->clicked = false;
+    mousePress(root, QPointF{500, 470});
+    QVERIFY(!controlPtr->isEditing());
+    QVERIFY(buttonPtr->clicked);
+}
+
+void CanvasTextControlTest::fontSetUnderlineAndStrikethrough() {
+    render::FontSet fontSet;
+    CanvasTextControl control;
+    control.openNew(QPointF{100, 100}, 20.0);
+    control.setFontSet(&fontSet);
+    control.setUnderline(true);
+    control.setStrikethrough(true);
+
+    const QFont font = control.document()->defaultFont();
+    QVERIFY(font.underline());
+    QVERIFY(font.strikeOut());
+}
+
+void CanvasTextControlTest::replacementPathReplacesSurroundingText() {
+    ViewRoot root;
+    root.resize({800, 600}, 1.0);
+
+    auto control = std::make_unique<CanvasTextControl>();
+    CanvasTextControl* const controlPtr = control.get();
+    root.addView(std::move(control));
+    controlPtr->openNew(QPointF{100, 100}, 20.0);
+    root.setInputMethodOwner(controlPtr);
+
+    sendInputMethod(root, *controlPtr, QStringLiteral("Helko"), QString());
+    QCOMPARE(controlPtr->text(), QStringLiteral("Helko"));
+
+    // Replace previous character 'o' (start = -1, length = 1) with 'p'
+    sendInputMethod(root, *controlPtr, QStringLiteral("p"), QString(), -1, 1);
+    QCOMPARE(controlPtr->text(), QStringLiteral("Helkp"));
+
+    // Replace 'kp' (start = -2, length = 2) with 'lo'
+    sendInputMethod(root, *controlPtr, QStringLiteral("lo"), QString(), -2, 2);
+    QCOMPARE(controlPtr->text(), QStringLiteral("Hello"));
 }
 
 } // namespace ariadshot::ui

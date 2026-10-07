@@ -228,12 +228,11 @@ void ViewObject::announce(QAccessible::Event event) {
     if (QAccessibleInterface* const node = accessible()) {
         if (m_accessibleId == 0) {
             m_accessibleId = QAccessible::uniqueId(node);
-            if (m_accessibleId == 0) {
-                m_accessibleId = QAccessible::registerAccessibleInterface(node);
-            }
         }
-        QAccessibleEvent change(node, event);
-        QAccessible::updateAccessibility(&change);
+        if (m_accessibleId != 0) {
+            QAccessibleEvent change(node, event);
+            QAccessible::updateAccessibility(&change);
+        }
     }
 }
 

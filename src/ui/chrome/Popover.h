@@ -20,6 +20,7 @@ namespace ariadshot::ui {
 class ViewRoot;
 
 // Ports MacShot's popover container (macshot/macshot/UI/Popover/PopoverHelper.swift@b4d4f3a).
+// Visual appearance values (colors, radius 8, content inset 4) are placeholders scoped to M1.
 // A chrome view object drawn inside the surface; anchors to a view or a point/rect, follows moving
 // anchors, and dismisses on outside click or Esc.
 class Popover : public ViewObject {
@@ -34,9 +35,7 @@ class Popover : public ViewObject {
     explicit Popover(QString name = {});
     ~Popover() override;
 
-    [[nodiscard]] QString accessibleName() const override {
-        return m_name.isEmpty() ? QStringLiteral("Popover") : m_name;
-    }
+    [[nodiscard]] QString accessibleName() const override { return m_name.isEmpty() ? QObject::tr("Popover") : m_name; }
     [[nodiscard]] QAccessible::Role accessibleRole() const override { return QAccessible::LayeredPane; }
 
     void setContent(std::unique_ptr<ViewObject> content);
@@ -49,7 +48,7 @@ class Popover : public ViewObject {
     [[nodiscard]] Edge edge() const { return m_edge; }
 
     void setAnchorView(const ViewObject* anchorView);
-    [[nodiscard]] const ViewObject* anchorView() const { return m_anchorView; }
+    [[nodiscard]] const ViewObject* anchorView() const { return m_anchorView.get(); }
 
     void setAnchorRect(QRectF rect);
     [[nodiscard]] QRectF anchorRect() const { return m_anchorRect; }
@@ -75,6 +74,7 @@ class Popover : public ViewObject {
     [[nodiscard]] bool isOpen() const { return m_open; }
 
     ViewObject* hitTest(QPointF point) override;
+    void rootPointerPressed(QPointF point) override;
     void handleEvent(const QEvent& event) override;
     void paint(QPainter& painter) override;
 
@@ -82,7 +82,7 @@ class Popover : public ViewObject {
     QString m_name;
     QSizeF m_preferredSize{200, 150};
     Edge m_edge = Edge::Bottom;
-    const ViewObject* m_anchorView = nullptr;
+    ConstViewRef m_anchorView;
     QRectF m_anchorRect;
     std::unique_ptr<ViewObject> m_content;
     std::function<void()> m_onDismissed;

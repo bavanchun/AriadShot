@@ -7,10 +7,13 @@
 #include "render/text/FontSet.h"
 
 #include <QAbstractTextDocumentLayout>
+#include <QAccessibleEditableTextInterface>
+#include <QAccessibleTextInterface>
 #include <QFontMetricsF>
 #include <QInputMethodEvent>
 #include <QInputMethodQueryEvent>
 #include <QKeyEvent>
+#include <QPaintDevice>
 #include <QPainter>
 #include <QSinglePointEvent>
 #include <QTextBlock>
@@ -25,20 +28,39 @@ namespace ariadshot::ui {
 namespace {
 // Inset is 4 pt on all sides (macshot/macshot/UI/Tools/TextEditingController.swift:295@b4d4f3a).
 constexpr qreal kInset = 4.0;
+
+class LayoutDevice72Dpi final : public QPaintDevice {
+  public:
+    QPaintEngine* paintEngine() const override { return nullptr; }
+
+  protected:
+    int metric(PaintDeviceMetric metric) const override {
+        switch (metric) {
+        case PdmDpiX:
+        case PdmDpiY:
+        case PdmPhysicalDpiX:
+        case PdmPhysicalDpiY:
+            return 72;
+        case PdmWidth:
+        case PdmHeight:
+            return 10000;
+        default:
+            return 0;
+        }
+    }
+};
 } // namespace
 
-CanvasTextControl::CanvasTextControl() : m_document(std::make_unique<QTextDocument>()), m_cursor(m_document.get()) {
+CanvasTextControl::CanvasTextControl()
+    : m_layoutDevice(std::make_unique<LayoutDevice72Dpi>()), m_document(std::make_unique<QTextDocument>()),
+      m_cursor(m_document.get()) {
     m_document->setDocumentMargin(0);
+    m_document->documentLayout()->setPaintDevice(m_layoutDevice.get());
 }
 
 CanvasTextControl::~CanvasTextControl() = default;
 
-QString CanvasTextControl::accessibleName() const {
-    if (m_document && !m_document->toPlainText().isEmpty()) {
-        return m_document->toPlainText();
-    }
-    return QStringLiteral("Text Editor");
-}
+QString CanvasTextControl::accessibleName() const { return QObject::tr("Canvas text editor"); }
 
 QRectF CanvasTextControl::paintBounds() const { return geometry().adjusted(-kInset, -kInset, kInset, kInset); }
 
@@ -49,6 +71,7 @@ void CanvasTextControl::openNew(QPointF point, qreal fontSize) {
     m_editing = true;
     m_preeditString.clear();
     m_preeditCursorPos = 0;
+    m_preeditFormats.clear();
     m_document->clear();
     m_document->setDefaultFont(currentFont());
     m_cursor = QTextCursor(m_document.get());
@@ -63,6 +86,7 @@ void CanvasTextControl::openReEdit(QRectF textDrawRect, const QString& text, qre
     m_editing = true;
     m_preeditString.clear();
     m_preeditCursorPos = 0;
+    m_preeditFormats.clear();
     m_document->clear();
     m_document->setDefaultFont(currentFont());
     m_document->setPlainText(text);
@@ -78,31 +102,41 @@ void CanvasTextControl::commit() {
         return;
     }
     m_editing = false;
-    m_preeditString.clear();
-    m_preeditCursorPos = 0;
+
+    // If an active input method composition is pending, insert it before committing (Finding 5)
+    if (!m_preeditString.isEmpty()) {
+        m_cursor.beginEditBlock();
+        m_cursor.insertText(m_preeditString);
+        m_cursor.endEditBlock();
+        m_preeditString.clear();
+        m_preeditCursorPos = 0;
+        m_preeditFormats.clear();
+    }
 
     const QString plainText = m_document ? m_document->toPlainText() : QString();
-    if (plainText.isEmpty()) {
-        if (m_onCommitted) {
-            m_onCommitted(QString(), QRectF());
-        }
-    } else {
+    QRectF finalRect;
+    if (!plainText.isEmpty()) {
         updateLayout();
         const qreal textWidth = m_document->idealWidth();
         const qreal minH = std::max(28.0, m_fontSize + 12.0);
         const qreal imgHeight = std::max(minH, std::ceil(m_document->size().height()) + 2.0 * kInset);
         const qreal fittedWidth = std::ceil(textWidth) + 2.0 * kInset;
         const qreal imgWidth = std::max(fittedWidth, 20.0);
-        const QRectF finalRect(geometry().x(), geometry().y(), imgWidth, imgHeight);
-        if (m_onCommitted) {
-            m_onCommitted(plainText, finalRect);
-        }
+        finalRect = QRectF(geometry().x(), geometry().y(), imgWidth, imgHeight);
     }
+
     if (m_document) {
         m_document->clearUndoRedoStacks();
     }
     m_lastDamage = paintBounds();
     update(m_lastDamage);
+
+    // Invoke callback as the very last statement, moving it first so self-destruction is safe (Finding 2)
+    auto cb = std::move(m_onCommitted);
+    m_onCommitted = nullptr;
+    if (cb) {
+        cb(plainText, finalRect);
+    }
 }
 
 void CanvasTextControl::cancel() {
@@ -112,14 +146,20 @@ void CanvasTextControl::cancel() {
     m_editing = false;
     m_preeditString.clear();
     m_preeditCursorPos = 0;
-    if (m_onCancelled) {
-        m_onCancelled();
-    }
+    m_preeditFormats.clear();
+
     if (m_document) {
         m_document->clearUndoRedoStacks();
     }
     m_lastDamage = paintBounds();
     update(m_lastDamage);
+
+    // Invoke callback as the very last statement, moving it first so self-destruction is safe (Finding 2)
+    auto cb = std::move(m_onCancelled);
+    m_onCancelled = nullptr;
+    if (cb) {
+        cb();
+    }
 }
 
 QString CanvasTextControl::text() const { return m_document ? m_document->toPlainText() : QString(); }
@@ -187,16 +227,19 @@ void CanvasTextControl::setAlignment(Qt::AlignmentFlag alignment) {
 }
 
 QFont CanvasTextControl::currentFont() const {
-    if (m_fontSet != nullptr) {
-        return m_fontSet->textFont(m_fontFamily, m_fontSize, m_bold, m_italic);
-    }
     QFont font;
-    if (!m_fontFamily.isEmpty()) {
-        font.setFamily(m_fontFamily);
+    if (m_fontSet != nullptr) {
+        font = m_fontSet->textFont(m_fontFamily, m_fontSize, m_bold, m_italic);
+    } else {
+        if (!m_fontFamily.isEmpty()) {
+            font.setFamily(m_fontFamily);
+        }
+        font.setPointSizeF(m_fontSize);
+        font.setBold(m_bold);
+        font.setItalic(m_italic);
+        font.setHintingPreference(QFont::PreferNoHinting);
+        font.setStyleStrategy(QFont::NoSubpixelAntialias);
     }
-    font.setPointSizeF(m_fontSize);
-    font.setBold(m_bold);
-    font.setItalic(m_italic);
     font.setUnderline(m_underline);
     font.setStrikeOut(m_strikethrough);
     return font;
@@ -213,19 +256,15 @@ QRectF CanvasTextControl::cursorSurfaceRect() const {
         if (block.isValid()) {
             if (const QTextLayout* const layout = block.layout()) {
                 const int relPos = m_cursor.position() - block.position();
-                const QTextLine line = layout->lineForTextPosition(relPos);
+                const int cursorTextPos = relPos + m_preeditCursorPos;
+                const QTextLine line = layout->lineForTextPosition(cursorTextPos);
                 if (line.isValid()) {
-                    x = line.cursorToX(relPos);
+                    x = line.cursorToX(cursorTextPos);
                     y = line.y();
                     h = line.height();
                 }
             }
         }
-    }
-
-    if (!m_preeditString.isEmpty()) {
-        const QFontMetricsF fm(currentFont());
-        x += fm.horizontalAdvance(m_preeditString.left(m_preeditCursorPos));
     }
 
     return {basePos.x() + x, basePos.y() + y, 2.0, h};
@@ -239,7 +278,41 @@ void CanvasTextControl::updateLayout() {
     m_document->setTextWidth(drawWidth);
     (void)m_document->documentLayout()->documentSize();
 
-    const qreal layoutHeight = m_document->toPlainText().isEmpty() ? 0.0 : m_document->size().height();
+    const QTextBlock block = m_cursor.block();
+    if (block.isValid()) {
+        if (QTextLayout* const layout = block.layout()) {
+            const int relPos = m_cursor.position() - block.position();
+            layout->setPreeditArea(relPos, m_preeditString);
+            if (!m_preeditString.isEmpty()) {
+                QList<QTextLayout::FormatRange> ranges;
+                for (auto r : m_preeditFormats) {
+                    r.start += relPos;
+                    ranges.append(r);
+                }
+                layout->setFormats(ranges);
+            } else {
+                layout->clearFormats();
+            }
+            layout->beginLayout();
+            qreal y = 0.0;
+            while (true) {
+                QTextLine line = layout->createLine();
+                if (!line.isValid()) {
+                    break;
+                }
+                line.setLineWidth(drawWidth);
+                line.setPosition(QPointF(0, y));
+                y += line.height();
+            }
+            layout->endLayout();
+        }
+    }
+
+    qreal layoutHeight =
+        (m_document->toPlainText().isEmpty() && m_preeditString.isEmpty()) ? 0.0 : m_document->size().height();
+    if (!m_preeditString.isEmpty() && block.isValid() && block.layout()) {
+        layoutHeight = std::max(layoutHeight, block.layout()->boundingRect().bottom());
+    }
     const qreal minH = std::max(28.0, m_fontSize + 12.0);
     const qreal liveHeight = std::max(minH, layoutHeight + 2.0 * kInset);
 
@@ -251,7 +324,7 @@ void CanvasTextControl::updateLayout() {
 void CanvasTextControl::resizeToFit() { updateLayout(); }
 
 void CanvasTextControl::paint(QPainter& painter) {
-    if (!m_editing && (m_document == nullptr || m_document->toPlainText().isEmpty())) {
+    if (!m_editing) {
         return;
     }
 
@@ -271,12 +344,10 @@ void CanvasTextControl::paint(QPainter& painter) {
         painter.drawRoundedRect(paintBounds(), 4.0, 4.0);
     }
 
-    if (m_editing) {
-        const QPen boxPen(QColor(100, 150, 240, 150), 1.0, Qt::DashLine);
-        painter.setPen(boxPen);
-        painter.setBrush(Qt::NoBrush);
-        painter.drawRect(geometry());
-    }
+    const QPen boxPen(QColor(100, 150, 240, 150), 1.0, Qt::DashLine);
+    painter.setPen(boxPen);
+    painter.setBrush(Qt::NoBrush);
+    painter.drawRect(geometry());
 
     const QPointF textOrigin = geometry().topLeft() + QPointF(kInset, kInset);
     painter.translate(textOrigin);
@@ -291,44 +362,22 @@ void CanvasTextControl::paint(QPainter& painter) {
         m_document->documentLayout()->draw(&painter, ctx);
     }
 
-    if (!m_preeditString.isEmpty()) {
-        qreal px = 0.0;
-        qreal py = 0.0;
-        const QTextBlock block = m_cursor.block();
-        if (block.isValid()) {
-            if (const QTextLayout* const layout = block.layout()) {
-                const int relPos = m_cursor.position() - block.position();
-                const QTextLine line = layout->lineForTextPosition(relPos);
-                if (line.isValid()) {
-                    px = line.cursorToX(relPos);
-                    py = line.y();
-                }
-            }
-        }
-        painter.setFont(currentFont());
-        painter.setPen(m_textColor);
-        const QFontMetricsF fm(currentFont());
-        const qreal preeditWidth = fm.horizontalAdvance(m_preeditString);
-        const qreal baseline = py + fm.ascent();
-        painter.drawText(QPointF{px, baseline}, m_preeditString);
-
-        const QPen underlinePen(m_textColor, 1.0, Qt::DashLine);
-        painter.setPen(underlinePen);
-        painter.drawLine(QPointF{px, baseline + 2.0}, QPointF{px + preeditWidth, baseline + 2.0});
-    }
-
-    if (m_editing) {
-        const QRectF cr = cursorSurfaceRect().translated(-textOrigin);
-        painter.setPen(Qt::NoPen);
-        painter.setBrush(m_textColor);
-        painter.drawRect(cr);
-    }
+    const QRectF cr = cursorSurfaceRect().translated(-textOrigin);
+    painter.setPen(Qt::NoPen);
+    painter.setBrush(m_textColor);
+    painter.drawRect(cr);
 
     painter.restore();
 }
 
-ViewObject* CanvasTextControl::hitTest(QPointF) {
-    if (!m_editing) {
+void CanvasTextControl::rootPointerPressed(QPointF point) {
+    if (m_editing && !geometry().contains(point)) {
+        commit();
+    }
+}
+
+ViewObject* CanvasTextControl::hitTest(QPointF point) {
+    if (!m_editing || !geometry().contains(point)) {
         return nullptr;
     }
     return this;
@@ -382,15 +431,36 @@ void CanvasTextControl::handleInputMethod(const QInputMethodEvent& event) {
         m_cursor.endEditBlock();
         m_preeditString.clear();
         m_preeditCursorPos = 0;
+        m_preeditFormats.clear();
     }
 
     const QString& preedit = event.preeditString();
     m_preeditString = preedit;
     m_preeditCursorPos = preedit.length();
+    m_preeditFormats.clear();
+
     for (const auto& attr : event.attributes()) {
         if (attr.type == QInputMethodEvent::Cursor) {
             m_preeditCursorPos = attr.start;
+        } else if (attr.type == QInputMethodEvent::TextFormat) {
+            QTextCharFormat fmt = qvariant_cast<QTextFormat>(attr.value).toCharFormat();
+            QTextLayout::FormatRange range;
+            range.start = attr.start;
+            range.length = attr.length;
+            range.format = fmt;
+            m_preeditFormats.append(range);
         }
+    }
+
+    if (!m_preeditString.isEmpty() && m_preeditFormats.isEmpty()) {
+        QTextCharFormat fmt;
+        fmt.setFontUnderline(true);
+        fmt.setUnderlineStyle(QTextCharFormat::DashUnderline);
+        QTextLayout::FormatRange range;
+        range.start = 0;
+        range.length = m_preeditString.length();
+        range.format = fmt;
+        m_preeditFormats.append(range);
     }
 
     updateLayout();
@@ -520,6 +590,9 @@ void CanvasTextControl::handleKeyPress(const QKeyEvent& event) {
 
 void CanvasTextControl::inputMethodQuery(QInputMethodQueryEvent& query) {
     const Qt::InputMethodQueries queries = query.queries();
+    if (queries & Qt::ImEnabled) {
+        query.setValue(Qt::ImEnabled, m_editing);
+    }
     if (queries & Qt::ImCursorRectangle) {
         query.setValue(Qt::ImCursorRectangle, cursorSurfaceRect());
     }
@@ -541,5 +614,183 @@ void CanvasTextControl::inputMethodQuery(QInputMethodQueryEvent& query) {
 }
 
 std::optional<Qt::CursorShape> CanvasTextControl::cursorAt(QPointF) const { return Qt::IBeamCursor; }
+
+class CanvasTextControlAccessible final : public QAccessibleInterface,
+                                          public QAccessibleTextInterface,
+                                          public QAccessibleEditableTextInterface {
+  public:
+    explicit CanvasTextControlAccessible(CanvasTextControl& control) : m_control(control) {}
+
+    bool isValid() const override { return !m_control.isDying(); }
+    QObject* object() const override { return nullptr; }
+    QAccessibleInterface* childAt(int /*x*/, int /*y*/) const override { return nullptr; }
+    QAccessibleInterface* parent() const override { return m_control.accessibleParent(); }
+    QAccessibleInterface* child(int /*index*/) const override { return nullptr; }
+    int childCount() const override { return 0; }
+    int indexOfChild(const QAccessibleInterface* /*child*/) const override { return -1; }
+
+    QString text(QAccessible::Text t) const override {
+        if (!isValid()) {
+            return {};
+        }
+        if (t == QAccessible::Name) {
+            return m_control.accessibleName();
+        }
+        if (t == QAccessible::Value) {
+            return m_control.text();
+        }
+        return {};
+    }
+    void setText(QAccessible::Text /*t*/, const QString& /*text*/) override {}
+
+    QRect rect() const override { return m_control.screenRect(); }
+
+    QAccessible::Role role() const override { return QAccessible::EditableText; }
+
+    QAccessible::State state() const override {
+        QAccessible::State s;
+        if (!isValid()) {
+            return s;
+        }
+        s.editable = true;
+        s.focusable = true;
+        s.focused = m_control.isEditing();
+        return s;
+    }
+
+    void* interface_cast(QAccessible::InterfaceType type) override {
+        if (type == QAccessible::TextInterface) {
+            return static_cast<QAccessibleTextInterface*>(this);
+        }
+        if (type == QAccessible::EditableTextInterface) {
+            return static_cast<QAccessibleEditableTextInterface*>(this);
+        }
+        return nullptr;
+    }
+
+    // QAccessibleTextInterface
+    void selection(int selectionIndex, int* startOffset, int* endOffset) const override {
+        if (selectionIndex == 0 && m_control.m_cursor.hasSelection()) {
+            if (startOffset != nullptr) {
+                *startOffset = m_control.m_cursor.selectionStart();
+            }
+            if (endOffset != nullptr) {
+                *endOffset = m_control.m_cursor.selectionEnd();
+            }
+        } else {
+            if (startOffset != nullptr) {
+                *startOffset = 0;
+            }
+            if (endOffset != nullptr) {
+                *endOffset = 0;
+            }
+        }
+    }
+
+    int selectionCount() const override { return m_control.m_cursor.hasSelection() ? 1 : 0; }
+
+    void addSelection(int startOffset, int endOffset) override {
+        m_control.m_cursor.setPosition(startOffset);
+        m_control.m_cursor.setPosition(endOffset, QTextCursor::KeepAnchor);
+        m_control.m_lastDamage = m_control.paintBounds();
+        m_control.update(m_control.m_lastDamage);
+    }
+
+    void removeSelection(int /*selectionIndex*/) override {
+        m_control.m_cursor.clearSelection();
+        m_control.m_lastDamage = m_control.paintBounds();
+        m_control.update(m_control.m_lastDamage);
+    }
+
+    void setSelection(int /*selectionIndex*/, int startOffset, int endOffset) override {
+        addSelection(startOffset, endOffset);
+    }
+
+    int cursorPosition() const override { return m_control.m_cursor.position(); }
+
+    void setCursorPosition(int position) override {
+        m_control.m_cursor.setPosition(position);
+        m_control.m_lastDamage = m_control.paintBounds();
+        m_control.update(m_control.m_lastDamage);
+    }
+
+    QString text(int startOffset, int endOffset) const override {
+        return m_control.text().mid(startOffset, endOffset - startOffset);
+    }
+
+    int characterCount() const override { return m_control.text().length(); }
+
+    QRect characterRect(int /*offset*/) const override { return m_control.cursorSurfaceRect().toRect(); }
+
+    int offsetAtPoint(const QPoint& point) const override {
+        if (m_control.m_document && m_control.m_document->documentLayout()) {
+            const QPointF localPt = point - m_control.screenRect().topLeft() - QPointF(kInset, kInset);
+            return m_control.m_document->documentLayout()->hitTest(localPt, Qt::FuzzyHit);
+        }
+        return -1;
+    }
+
+    void scrollToSubstring(int /*startIndex*/, int /*endIndex*/) override {}
+
+    QString attributes(int /*offset*/, int* startOffset, int* endOffset) const override {
+        if (startOffset != nullptr) {
+            *startOffset = 0;
+        }
+        if (endOffset != nullptr) {
+            *endOffset = characterCount();
+        }
+        return {};
+    }
+
+    // QAccessibleEditableTextInterface
+    void deleteText(int startOffset, int endOffset) override {
+        if (!m_control.m_document) {
+            return;
+        }
+        QTextCursor c(m_control.m_document.get());
+        c.setPosition(startOffset);
+        c.setPosition(endOffset, QTextCursor::KeepAnchor);
+        c.removeSelectedText();
+        m_control.updateLayout();
+        m_control.m_lastDamage = m_control.paintBounds();
+        m_control.update(m_control.m_lastDamage);
+    }
+
+    void insertText(int offset, const QString& text) override {
+        if (!m_control.m_document) {
+            return;
+        }
+        QTextCursor c(m_control.m_document.get());
+        c.setPosition(offset);
+        c.insertText(text);
+        m_control.updateLayout();
+        m_control.m_lastDamage = m_control.paintBounds();
+        m_control.update(m_control.m_lastDamage);
+    }
+
+    void replaceText(int startOffset, int endOffset, const QString& text) override {
+        if (!m_control.m_document) {
+            return;
+        }
+        QTextCursor c(m_control.m_document.get());
+        c.setPosition(startOffset);
+        c.setPosition(endOffset, QTextCursor::KeepAnchor);
+        c.insertText(text);
+        m_control.updateLayout();
+        m_control.m_lastDamage = m_control.paintBounds();
+        m_control.update(m_control.m_lastDamage);
+    }
+
+  private:
+    CanvasTextControl& m_control;
+};
+
+QAccessibleInterface* CanvasTextControl::accessible() {
+    if (m_accessibleId == 0) {
+        m_accessibleId =
+            QAccessible::registerAccessibleInterface(std::make_unique<CanvasTextControlAccessible>(*this).release());
+    }
+    return QAccessible::accessibleInterface(m_accessibleId);
+}
 
 } // namespace ariadshot::ui

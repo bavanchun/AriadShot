@@ -24,14 +24,14 @@ void ToolTipView::setText(const QString& text) {
 
 void ToolTipView::setAnchorView(const ViewObject* anchorView) {
     m_anchorView = anchorView;
-    if (anchorView != nullptr) {
-        m_anchorPoint = anchorView->geometry().center();
+    if (const auto* anchor = m_anchorView.get()) {
+        m_anchorPoint = anchor->geometry().center();
     }
 }
 
 void ToolTipView::setAnchorPoint(QPointF point) {
     m_anchorPoint = point;
-    m_anchorView = nullptr;
+    m_anchorView = {};
 }
 
 void ToolTipView::open(const ViewObject* anchorView, const QString& text, Edge edge) {
@@ -63,8 +63,10 @@ void ToolTipView::open(ViewRoot& /*root*/, QPointF anchorPoint, const QString& t
 }
 
 void ToolTipView::followAnchor() {
-    if (m_anchorView != nullptr) {
-        m_anchorPoint = m_anchorView->geometry().center();
+    if (const auto* anchor = m_anchorView.get()) {
+        m_anchorPoint = anchor->geometry().center();
+    } else if (m_anchorView.isExpired()) {
+        m_anchorView = {};
     }
     updatePlacement();
 }
@@ -83,10 +85,10 @@ void ToolTipView::updatePlacement() {
     constexpr qreal kGap = 6.0;
     qreal x = 0;
     qreal y = 0;
-    if (m_anchorView != nullptr) {
-        const QRectF anchor = m_anchorView->geometry();
-        x = anchor.center().x() - w / 2.0;
-        y = (m_edge == Edge::Bottom) ? (anchor.bottom() + kGap) : (anchor.top() - h - kGap);
+    if (const auto* anchor = m_anchorView.get()) {
+        const QRectF anchorGeo = anchor->geometry();
+        x = anchorGeo.center().x() - w / 2.0;
+        y = (m_edge == Edge::Bottom) ? (anchorGeo.bottom() + kGap) : (anchorGeo.top() - h - kGap);
     } else {
         x = m_anchorPoint.x() - w / 2.0;
         y = (m_edge == Edge::Bottom) ? (m_anchorPoint.y() + kGap) : (m_anchorPoint.y() - h - kGap);
@@ -103,14 +105,16 @@ void ToolTipView::dismiss() {
     update(paintBounds());
 }
 
+void ToolTipView::rootPointerPressed(QPointF point) {
+    if (m_open && !geometry().contains(point)) {
+        dismiss();
+    }
+}
+
 ViewObject* ToolTipView::hitTest(QPointF point) {
-    if (!m_open) {
+    if (!m_open || !geometry().contains(point)) {
         return nullptr;
     }
-    if (geometry().contains(point)) {
-        return this;
-    }
-    // Any click outside dismisses the tooltip
     return this;
 }
 

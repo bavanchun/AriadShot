@@ -46,12 +46,6 @@ class ViewRoot::Accessible final : public QAccessibleInterface {
     ViewRoot& m_root;
 };
 
-ViewRoot::Ref::Ref(ViewObject* view) : m_view(view) {
-    if (view != nullptr) {
-        m_alive = view->m_lifetime;
-    }
-}
-
 // The views are destroyed after the root's other members, and a view's destructor may still report damage or ask for
 // its screen position; it has to find no root by then.
 ViewRoot::~ViewRoot() {
@@ -265,6 +259,18 @@ void ViewRoot::dispatchPointer(const QSinglePointEvent& event) {
     }
     // The owner of a gesture takes all of it, and nobody else when it is gone.
     const bool inGesture = m_pointerOwner.holder != nullptr;
+    if (press && !inGesture) {
+        std::vector<ViewRef> viewSnapshots;
+        viewSnapshots.reserve(m_views.size());
+        for (const auto& view : m_views) {
+            viewSnapshots.emplace_back(view.get());
+        }
+        for (const auto& ref : viewSnapshots) {
+            if (ViewObject* const v = ref.get()) {
+                v->rootPointerPressed(m_pointer);
+            }
+        }
+    }
     const Hit target =
         inGesture ? Hit{.holder = m_pointerOwner.holder, .view = m_pointerOwner.view.get()} : hitAt(m_pointer);
     if (press && !inGesture) {

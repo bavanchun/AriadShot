@@ -241,12 +241,12 @@ ariadshot_add_test(NAME ui.view-root
 
 ariadshot_add_test(NAME ui.chrome-containers
     SOURCES unit/ui/tst_ChromeContainers.cpp
-    LIBS AriadShot::ui Qt6::GuiPrivate
+    LIBS AriadShot::ui
     LABELS unit)
 
 ariadshot_add_test(NAME ui.canvas-text-control
     SOURCES unit/ui/tst_CanvasTextControl.cpp
-    LIBS AriadShot::ui Qt6::GuiPrivate
+    LIBS AriadShot::ui
     LABELS unit)
 
 if(ARIADSHOT_MEDIA)

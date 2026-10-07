@@ -62,10 +62,12 @@ void Popover::open(ViewRoot& /*root*/, const ViewObject* anchorView, Edge edge) 
 void Popover::open(ViewRoot& /*root*/, QRectF anchorRect, Edge edge) { open(anchorRect, edge); }
 
 void Popover::followAnchor() {
-    if (m_anchorView != nullptr) {
-        m_anchorRect = m_anchorView->geometry();
+    if (const ViewObject* const anchor = m_anchorView.get()) {
+        m_anchorRect = anchor->geometry();
+        updatePlacement();
+    } else if (m_anchorView.isExpired()) {
+        m_anchorView = nullptr;
     }
-    updatePlacement();
 }
 
 void Popover::updatePlacement() {
@@ -124,23 +126,23 @@ ViewObject* Popover::hitTest(QPointF point) {
         }
         return this;
     }
-    if (m_dismissOnOutsideClick) {
-        return this;
-    }
     return nullptr;
+}
+
+void Popover::rootPointerPressed(QPointF point) {
+    if (!m_open || !m_dismissOnOutsideClick) {
+        return;
+    }
+    if (!geometry().contains(point)) {
+        dismiss();
+    }
 }
 
 void Popover::handleEvent(const QEvent& event) {
     if (!m_open) {
         return;
     }
-    if (event.type() == QEvent::MouseButtonPress) {
-        const auto& mouseEvent = static_cast<const QSinglePointEvent&>(event);
-        if (!geometry().contains(mouseEvent.position())) {
-            dismiss();
-            return;
-        }
-    } else if (event.type() == QEvent::KeyPress) {
+    if (event.type() == QEvent::KeyPress) {
         const auto& keyEvent = static_cast<const QKeyEvent&>(event);
         if (m_dismissOnEscape && keyEvent.key() == Qt::Key_Escape) {
             dismiss();

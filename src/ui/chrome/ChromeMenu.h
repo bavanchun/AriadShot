@@ -41,9 +41,7 @@ class ChromeMenu : public ViewObject {
     explicit ChromeMenu(QString title = {});
     ~ChromeMenu() override;
 
-    [[nodiscard]] QString accessibleName() const override {
-        return m_title.isEmpty() ? QStringLiteral("Menu") : m_title;
-    }
+    [[nodiscard]] QString accessibleName() const override { return m_title.isEmpty() ? QObject::tr("Menu") : m_title; }
     [[nodiscard]] QAccessible::Role accessibleRole() const override { return QAccessible::PopupMenu; }
 
     void addAction(const QString& text, std::function<void()> callback = nullptr, const QString& shortcut = {});
@@ -55,11 +53,13 @@ class ChromeMenu : public ViewObject {
     [[nodiscard]] int hoveredIndex() const { return m_hoveredIndex; }
 
     void setAnchorView(const ViewObject* anchorView);
-    [[nodiscard]] const ViewObject* anchorView() const { return m_anchorView; }
+    [[nodiscard]] const ViewObject* anchorView() const { return m_anchorView.get(); }
 
     void setAnchorPoint(QPointF point);
     [[nodiscard]] QPointF anchorPoint() const { return m_anchorPoint; }
 
+    // Structural in-surface chrome menu for M0; visual styling (colors, padding, item heights,
+    // shadows) will be refined against MacShot's SwiftUI chrome in M1.
     void open(const ViewObject* anchorView, Edge edge = Edge::Bottom);
     void open(QPointF anchorPoint, Edge edge = Edge::Bottom);
     void open(ViewRoot& root, const ViewObject* anchorView, Edge edge = Edge::Bottom);
@@ -73,18 +73,24 @@ class ChromeMenu : public ViewObject {
 
     void triggerItem(int index);
 
+    void rootPointerPressed(QPointF point) override;
     ViewObject* hitTest(QPointF point) override;
     void handleEvent(const QEvent& event) override;
     void paint(QPainter& painter) override;
 
+    QAccessibleInterface* accessible() override;
+
   private:
+    friend class ChromeMenuAccessible;
+    friend class ChromeMenuItemAccessible;
+
     [[nodiscard]] int itemIndexAt(QPointF pos) const;
     void selectNext();
     void selectPrevious();
 
     QString m_title;
     Edge m_edge = Edge::Bottom;
-    const ViewObject* m_anchorView = nullptr;
+    ConstViewRef m_anchorView;
     QPointF m_anchorPoint;
     std::vector<Item> m_items;
     int m_hoveredIndex = -1;
